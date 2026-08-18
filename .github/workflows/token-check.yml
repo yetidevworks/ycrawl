@@ -1,0 +1,74 @@
+name: Check tap token
+
+# One-off diagnostic: does TAP_PUSH_TOKEN authenticate, and can it push to the
+# Homebrew tap? Run manually. Nothing here prints the token — GitHub masks
+# secrets in logs, but the token is only ever passed in a header or a git
+# credential helper, never echoed.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      TAP_REPO: yetidevworks/homebrew-ycrawl
+    steps:
+      - name: Token is present
+        run: |
+          if [ -z "${{ secrets.TAP_PUSH_TOKEN }}" ]; then
+            echo "::error::TAP_PUSH_TOKEN is empty. Is it a secret (not a variable), and is this repo in its selected list?"
+            exit 1
+          fi
+          echo "secret is present and non-empty"
+
+      - name: Token authenticates
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          code=$(curl -sS -o /tmp/who.json -w '%{http_code}' \
+                 -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 https://api.github.com/user)
+          echo "GET /user -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Token rejected by GitHub. It may be expired, revoked, or awaiting org approval."
+            jq -r '.message // "no message"' /tmp/who.json
+            exit 1
+          fi
+          echo "authenticated as: $(jq -r .login /tmp/who.json)"
+
+      - name: Token can read the tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          code=$(curl -sS -o /tmp/repo.json -w '%{http_code}' \
+                 -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 "https://api.github.com/repos/${TAP_REPO}")
+          echo "GET /repos/${TAP_REPO} -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Token cannot see ${TAP_REPO}. Grant the fine-grained PAT access to that repository."
+            exit 1
+          fi
+          echo "permissions: $(jq -c '.permissions' /tmp/repo.json)"
+          if [ "$(jq -r '.permissions.push' /tmp/repo.json)" != "true" ]; then
+            echo "::error::Token has no push permission on ${TAP_REPO}. It needs Contents: read and write."
+            exit 1
+          fi
+          echo "push permission: yes"
+
+      - name: Token can actually push
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap 2>&1 \
+            | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
+          cd tap
+          git config user.name  "ycrawl release bot"
+          git config user.email "actions@github.com"
+          date -u +"last token check: %Y-%m-%dT%H:%M:%SZ" > .token-check
+          git add .token-check
+          git commit -q -m "ci: token check"
+          git push -q origin main 2>&1 | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
+          echo "push succeeded — the tap token works end to end"
