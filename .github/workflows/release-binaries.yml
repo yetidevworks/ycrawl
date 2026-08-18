@@ -117,12 +117,16 @@ jobs:
             | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
           cd tap
 
-          # Rewrite from the committed template each time, so a formula is never
-          # built on top of the previous release's substituted values.
-          git show HEAD:Formula/ycrawl.rb > /tmp/template.rb 2>/dev/null || true
-          if grep -q REPLACE_VERSION /tmp/template.rb 2>/dev/null; then
-            cp /tmp/template.rb Formula/ycrawl.rb
+          # Always generate from the immutable template. Reading the previous
+          # formula as a source does not work: after the first release it holds
+          # substituted values, every sed becomes a no-op, and the commit fails
+          # with "nothing to commit" while the tap silently keeps pointing at the
+          # old version.
+          if [ ! -f Formula/ycrawl.rb.template ]; then
+            echo "::error::Formula/ycrawl.rb.template is missing from ${TAP_REPO}"
+            exit 1
           fi
+          cp Formula/ycrawl.rb.template Formula/ycrawl.rb
 
           sed -i "s|REPLACE_VERSION|${VER}|g"                                        Formula/ycrawl.rb
           sed -i "s|REPLACE_DARWIN_ARM64_URL|${BASE}/ycrawl-${VER}-darwin-arm64.tar.gz|g"    Formula/ycrawl.rb
@@ -144,6 +148,10 @@ jobs:
           git config user.name  "ycrawl release bot"
           git config user.email "actions@github.com"
           git add -A
+          if git diff --cached --quiet; then
+            echo "::error::formula is unchanged — expected it to be updated to ${VER}"
+            exit 1
+          fi
           git commit -q -m "ycrawl ${VER}"
           git push -q origin main 2>&1 | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
           echo "tap updated to ${VER}"
