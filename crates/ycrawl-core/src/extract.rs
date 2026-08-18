@@ -147,7 +147,11 @@ fn readable(html: &str, url: &str) -> Option<(String, Option<String>, String)> {
 fn document_title(html: &str) -> Option<String> {
     let doc = Document::from(html);
     let t = doc.select("title").text().trim().to_string();
-    if t.is_empty() { None } else { Some(t) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
 }
 
 fn meta_description(html: &str) -> Option<String> {

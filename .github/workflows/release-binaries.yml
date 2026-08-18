@@ -1,0 +1,149 @@
+name: Release binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach binaries to"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TAP_REPO: yetidevworks/homebrew-ycrawl
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Every target builds on a native runner. ycrawl links BoringSSL via
+          # btls-sys, which compiles it from vendored source with cmake and
+          # bindgen — cross-compiling that is a fight, and native runners exist
+          # for all four platforms we care about.
+          - os: macos-14
+            target: aarch64-apple-darwin
+            target_name: darwin-arm64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            target_name: darwin-x86_64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            target_name: linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            target_name: linux-aarch64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake clang libclang-dev
+
+      - name: Build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: cmake --version || brew install cmake
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p ycrawl-cli
+
+      - name: Verify the binary runs
+        run: ./target/${{ matrix.target }}/release/ycrawl --version
+
+      - name: Archive
+        id: archive
+        run: |
+          set -euo pipefail
+          VER="${RELEASE_TAG#v}"
+          NAME="ycrawl-${VER}-${{ matrix.target_name }}.tar.gz"
+          tar -czf "$NAME" -C "target/${{ matrix.target }}/release" ycrawl
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$NAME"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target_name }}
+          path: ${{ steps.archive.outputs.name }}
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${RELEASE_TAG}" "${{ steps.archive.outputs.name }}" --clobber --repo "${GITHUB_REPOSITORY}"
+
+  update-formula:
+    name: Update tap formula
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+      - name: Build the formula and push it
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER="${RELEASE_TAG#v}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+
+          sha() { find /tmp/artifacts -name "ycrawl-${VER}-$1.tar.gz" -print -quit \
+                  | xargs sha256sum | awk '{print $1}'; }
+
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap 2>&1 \
+            | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
+          cd tap
+
+          # Rewrite from the committed template each time, so a formula is never
+          # built on top of the previous release's substituted values.
+          git show HEAD:Formula/ycrawl.rb > /tmp/template.rb 2>/dev/null || true
+          if grep -q REPLACE_VERSION /tmp/template.rb 2>/dev/null; then
+            cp /tmp/template.rb Formula/ycrawl.rb
+          fi
+
+          sed -i "s|REPLACE_VERSION|${VER}|g"                                        Formula/ycrawl.rb
+          sed -i "s|REPLACE_DARWIN_ARM64_URL|${BASE}/ycrawl-${VER}-darwin-arm64.tar.gz|g"    Formula/ycrawl.rb
+          sed -i "s|REPLACE_DARWIN_X86_64_URL|${BASE}/ycrawl-${VER}-darwin-x86_64.tar.gz|g"  Formula/ycrawl.rb
+          sed -i "s|REPLACE_LINUX_X86_64_URL|${BASE}/ycrawl-${VER}-linux-x86_64.tar.gz|g"    Formula/ycrawl.rb
+          sed -i "s|REPLACE_LINUX_AARCH64_URL|${BASE}/ycrawl-${VER}-linux-aarch64.tar.gz|g"  Formula/ycrawl.rb
+          sed -i "s|REPLACE_DARWIN_ARM64_SHA|$(sha darwin-arm64)|g"                  Formula/ycrawl.rb
+          sed -i "s|REPLACE_DARWIN_X86_64_SHA|$(sha darwin-x86_64)|g"                Formula/ycrawl.rb
+          sed -i "s|REPLACE_LINUX_X86_64_SHA|$(sha linux-x86_64)|g"                  Formula/ycrawl.rb
+          sed -i "s|REPLACE_LINUX_AARCH64_SHA|$(sha linux-aarch64)|g"                Formula/ycrawl.rb
+
+          if grep -q REPLACE_ Formula/ycrawl.rb; then
+            echo "::error::formula still has unsubstituted placeholders"
+            grep -n REPLACE_ Formula/ycrawl.rb
+            exit 1
+          fi
+
+          rm -f .token-check
+          git config user.name  "ycrawl release bot"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "ycrawl ${VER}"
+          git push -q origin main 2>&1 | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
+          echo "tap updated to ${VER}"

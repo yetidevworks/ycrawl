@@ -49,7 +49,9 @@ impl std::str::FromStr for Profile {
             "firefox" => Ok(Profile::Firefox),
             "safari" => Ok(Profile::Safari),
             "random" => Ok(Profile::Random),
-            other => anyhow::bail!("unknown profile {other:?}; expected chrome, firefox, safari or random"),
+            other => anyhow::bail!(
+                "unknown profile {other:?}; expected chrome, firefox, safari or random"
+            ),
         }
     }
 }

@@ -36,12 +36,18 @@ pub enum Verdict {
     /// Real page content.
     Content,
     /// The response is a shell: it parsed, but carries almost nothing.
-    Thin { words: usize },
+    Thin {
+        words: usize,
+    },
     /// The page told us outright that it needs JavaScript.
     JsRequired,
     /// An interstitial stood in the way.
-    Blocked { wall: Wall },
-    HttpError { status: u16 },
+    Blocked {
+        wall: Wall,
+    },
+    HttpError {
+        status: u16,
+    },
 }
 
 /// Whether escalating to a real browser is worth the four seconds.
@@ -125,7 +131,11 @@ const WALLS: &[(Wall, &[&str])] = &[
     ),
     (
         Wall::PerimeterX,
-        &["press & hold to confirm you are", "px-captcha", "/px/captcha"],
+        &[
+            "press & hold to confirm you are",
+            "px-captcha",
+            "/px/captcha",
+        ],
     ),
     (
         Wall::DataDome,
@@ -133,7 +143,10 @@ const WALLS: &[(Wall, &[&str])] = &[
     ),
     (
         Wall::Akamai,
-        &["errors.edgesuite.net", "you don't have permission to access"],
+        &[
+            "errors.edgesuite.net",
+            "you don't have permission to access",
+        ],
     ),
     (
         Wall::BotGeneric,
@@ -275,7 +288,12 @@ mod tests {
     fn datadome_escalation_is_futile() {
         let html = r#"<iframe src="https://geo.captcha-delivery.com/captcha/"></iframe>"#;
         let v = classify(html, 403, 0);
-        assert_eq!(v, Verdict::Blocked { wall: Wall::DataDome });
+        assert_eq!(
+            v,
+            Verdict::Blocked {
+                wall: Wall::DataDome
+            }
+        );
         assert_eq!(v.escalation(), Escalation::Futile);
     }
 
@@ -292,6 +310,9 @@ mod tests {
     #[test]
     fn short_but_real_pages_are_content() {
         // example.com is 17 words and entirely legitimate.
-        assert_eq!(classify("<html><body>ok</body></html>", 200, 17), Verdict::Content);
+        assert_eq!(
+            classify("<html><body>ok</body></html>", 200, 17),
+            Verdict::Content
+        );
     }
 }

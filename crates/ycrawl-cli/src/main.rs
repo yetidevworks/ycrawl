@@ -2,7 +2,9 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use std::sync::Arc;
 use std::time::Duration;
-use ycrawl_core::{client, extract, fetch, Browser, Escalation, ExtractOptions, Page, Profile, Tier};
+use ycrawl_core::{
+    client, extract, fetch, Browser, Escalation, ExtractOptions, Page, Profile, Tier,
+};
 
 /// Fetch web pages and convert them to clean markdown. Nothing is written to disk.
 #[derive(Parser, Debug)]
@@ -84,7 +86,9 @@ async fn main() -> Result<()> {
             200,
             0,
             Tier::Http,
-            &ExtractOptions { keep_images: !args.no_images },
+            &ExtractOptions {
+                keep_images: !args.no_images,
+            },
         );
         emit(&page, &args, false);
         return Ok(());

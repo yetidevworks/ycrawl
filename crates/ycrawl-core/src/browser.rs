@@ -108,12 +108,11 @@ impl Browser {
         timeout: Duration,
         settle: Duration,
     ) -> Result<(String, String)> {
+        // A timeout is not automatically fatal: the page may have rendered enough to
+        // be useful before the last asset stalled, so take whatever is there.
         let nav = tokio::time::timeout(timeout, client.goto(url));
-        match nav.await {
-            Ok(r) => r.context("navigating")?,
-            // A timeout is not automatically fatal: the page may have rendered
-            // enough to be useful before the last asset stalled. Take what is there.
-            Err(_) => {}
+        if let Ok(r) = nav.await {
+            r.context("navigating")?;
         }
 
         // Give client-side rendering a moment to populate the DOM.

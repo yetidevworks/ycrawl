@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # ycrawl links BoringSSL through btls-sys, which compiles it from vendored
+      # source with cmake and generates bindings with libclang.
+      - name: Build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake clang libclang-dev
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The suite is entirely offline: every test runs against static HTML, so
+      # nothing here depends on a live site or a browser being present.
+      - name: Tests
+        run: cargo test --all

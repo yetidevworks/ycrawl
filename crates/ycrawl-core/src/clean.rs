@@ -5,7 +5,16 @@ use url::Url;
 /// `svg` matters more than it looks: inline icon sets routinely cost thousands
 /// of tokens and carry nothing an agent can use.
 const DROP: &[&str] = &[
-    "script", "style", "noscript", "svg", "template", "iframe", "object", "embed", "canvas", "link",
+    "script",
+    "style",
+    "noscript",
+    "svg",
+    "template",
+    "iframe",
+    "object",
+    "embed",
+    "canvas",
+    "link",
     "meta[http-equiv]",
 ];
 
@@ -82,9 +91,28 @@ fn normalize_code_blocks(doc: &Document) {
 
 /// Anchor text that is a control rather than content.
 const FURNITURE_LINKS: &[&str] = &[
-    "hide", "flag", "vote", "upvote", "downvote", "favorite", "unfavorite", "reply", "parent",
-    "context", "permalink", "report", "share", "save", "unsave", "edit", "delete", "print",
-    "skip to content", "skip to main content", "back to top", "scroll to top",
+    "hide",
+    "flag",
+    "vote",
+    "upvote",
+    "downvote",
+    "favorite",
+    "unfavorite",
+    "reply",
+    "parent",
+    "context",
+    "permalink",
+    "report",
+    "share",
+    "save",
+    "unsave",
+    "edit",
+    "delete",
+    "print",
+    "skip to content",
+    "skip to main content",
+    "back to top",
+    "scroll to top",
 ];
 
 /// Remove links that operate the site rather than describe it.
@@ -133,10 +161,7 @@ fn promote_table_headers(doc: &Document) {
         if rows.length() < 3 {
             continue;
         }
-        let widths: Vec<usize> = rows
-            .iter()
-            .map(|r| r.select("td, th").length())
-            .collect();
+        let widths: Vec<usize> = rows.iter().map(|r| r.select("td, th").length()).collect();
         let first = widths[0];
         if first < 2 || widths.iter().any(|w| *w != first) {
             continue; // ragged rows are a layout artefact
@@ -190,7 +215,8 @@ fn language_for(pre: &Selection) -> Option<String> {
     for class in &classes {
         if let Some(rest) = class.to_ascii_lowercase().split("brush:").nth(1) {
             if let Some(name) = rest.split_whitespace().next() {
-                let name = name.trim_matches(|c: char| !c.is_alphanumeric() && c != '+' && c != '#');
+                let name =
+                    name.trim_matches(|c: char| !c.is_alphanumeric() && c != '+' && c != '#');
                 if !name.is_empty() {
                     return Some(normalize_language(name));
                 }
@@ -266,7 +292,8 @@ fn strip_tracking(url: &mut Url) {
         .query_pairs()
         .filter(|(k, _)| {
             let k = k.to_ascii_lowercase();
-            !TRACKING_PREFIXES.iter().any(|p| k.starts_with(p)) && !TRACKING_EXACT.contains(&k.as_str())
+            !TRACKING_PREFIXES.iter().any(|p| k.starts_with(p))
+                && !TRACKING_EXACT.contains(&k.as_str())
         })
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
@@ -335,8 +362,13 @@ mod tests {
     fn bare_pre_becomes_a_fenced_code_block() {
         // The Python docs ship `<pre>` with no `<code>`, and converters only fence
         // `<pre><code>` — 34 code blocks were arriving as loose prose.
-        let out = clean(r#"<div class="highlight-python3"><div class="highlight"><pre>print(1)</pre></div></div>"#);
-        assert!(out.contains(r#"<code class="language-python">"#), "got: {out}");
+        let out = clean(
+            r#"<div class="highlight-python3"><div class="highlight"><pre>print(1)</pre></div></div>"#,
+        );
+        assert!(
+            out.contains(r#"<code class="language-python">"#),
+            "got: {out}"
+        );
     }
 
     #[test]
@@ -348,7 +380,9 @@ mod tests {
 
     #[test]
     fn highlight_spans_are_stripped_from_code() {
-        let out = clean(r#"<pre class="language-rust"><span class="k">fn</span> <span class="n">main</span></pre>"#);
+        let out = clean(
+            r#"<pre class="language-rust"><span class="k">fn</span> <span class="n">main</span></pre>"#,
+        );
         assert!(!out.contains("<span"), "highlight markup survived: {out}");
         assert!(out.contains("fn main"));
     }
@@ -363,20 +397,25 @@ mod tests {
     fn layout_tables_are_left_alone() {
         // A table containing a table is positioning, not data. Hacker News is the
         // canonical example, and forcing it into a grid reads worse than prose.
-        let out = clean("<table><tr><td><table><tr><td>x</td></tr></table></td><td>o</td></tr>\
-                         <tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>");
+        let out = clean(
+            "<table><tr><td><table><tr><td>x</td></tr></table></td><td>o</td></tr>\
+                         <tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>",
+        );
         assert!(!out.contains("<thead>"), "layout table was promoted: {out}");
     }
 
     #[test]
     fn ragged_tables_are_left_alone() {
-        let out = clean("<table><tr><td>a</td></tr><tr><td>b</td><td>c</td></tr><tr><td>d</td></tr></table>");
+        let out = clean(
+            "<table><tr><td>a</td></tr><tr><td>b</td><td>c</td></tr><tr><td>d</td></tr></table>",
+        );
         assert!(!out.contains("<thead>"));
     }
 
     #[test]
     fn furniture_links_are_dropped() {
-        let out = clean(r#"<p><a href="/vote?id=1">vote</a> <a href="/item?id=1">A real title</a></p>"#);
+        let out =
+            clean(r#"<p><a href="/vote?id=1">vote</a> <a href="/item?id=1">A real title</a></p>"#);
         assert!(!out.contains("/vote?id=1"), "furniture link kept: {out}");
         assert!(out.contains("A real title"));
     }
