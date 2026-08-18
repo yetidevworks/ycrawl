@@ -6,7 +6,7 @@ Fetch a web page, get clean markdown. Nothing is cached, indexed, or written to 
 ycrawl https://doc.rust-lang.org/book/ch01-00-getting-started.html
 ```
 
-## Why
+## The problem
 
 Agent web tooling burns tokens two ways: it fetches pages that hand back navigation instead of content, and it pipes whatever it got straight into the conversation. A single documentation page can cost 15,000 tokens when the useful part was three paragraphs.
 
@@ -14,7 +14,21 @@ ycrawl attacks both. Extraction strips the furniture, and the output modes let a
 
 It also tells you *why* a page came back empty. A bot wall and a genuinely blank page are different problems, and an agent that cannot distinguish them will retry forever or quietly report nothing.
 
-Every design decision here is measured rather than assumed. The `ycrawl-bench/` harness in the neighbouring directory runs candidate engines against 55 live URLs chosen for how they resist automated access, and the numbers throughout this README come from it.
+Every design decision here is measured rather than assumed. The [`ycrawl-bench`](https://github.com/yetidevworks/ycrawl-bench) harness runs candidate engines against 55 live URLs chosen for how they resist automated access, and the numbers throughout this README come from it.
+
+## Why a local binary
+
+Hosted services in this space — Firecrawl and the like — pitch themselves as infrastructure: *the context API to search, scrape, and interact with the web at scale*. That is an accurate description of what they are, and if you need to crawl an entire site, run structured extraction across thousands of pages, or get through walls that need residential IP rotation, use one. Genuinely. ycrawl does none of that and is not trying to.
+
+ycrawl is the other end of the trade. It is one binary on your machine that reads a page well.
+
+- **No key, no credits, no per-page cost.** Fetch the same documentation page fifty times while you are working through a problem. Nothing meters it.
+- **Nothing leaves your machine.** No third party learns which URLs you read — which matters more than it sounds if you are reading competitor pages, client sites, or internal docs.
+- **No service to be up.** No network round-trip to somebody else's API before the round-trip to the page you wanted. Tier 1 fetches land in about 180 ms.
+- **It tells you the truth.** Content, shell, JavaScript-only, or a named bot wall — and whether anything would get past it. That is the difference between an agent saying "that site blocks automated access" and an agent silently handing you nothing.
+- **Narrow on purpose.** One job: URL in, clean markdown out. No crawler, no scheduler, no dashboard, no account.
+
+The bet is that most of what an agent actually needs from the web is *this page, right now, cleanly* — and that the honest answer when a page cannot be read is worth as much as the page itself.
 
 ## Compared with your agent's built-in fetch
 
