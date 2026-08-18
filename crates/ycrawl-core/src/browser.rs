@@ -1,4 +1,4 @@
-use crate::fetch::Fetched;
+use crate::fetch::{Fetched, FetchedBody};
 use anyhow::{bail, Context, Result};
 use fantoccini::{ClientBuilder, Locator};
 use serde_json::{json, Map, Value};
@@ -64,43 +64,49 @@ impl Browser {
                     "datareporting.healthreport.uploadEnabled": false,
                     "app.update.auto": false,
                     "dom.push.enabled": false,
+                    "permissions.default.image": 2,
                     "intl.accept_languages": "en-US, en",
                 }
             }),
         );
-        caps.insert("pageLoadStrategy".into(), json!("normal"));
+        caps.insert("pageLoadStrategy".into(), json!("eager"));
         caps.insert("acceptInsecureCerts".into(), json!(true));
         caps
     }
 
     /// Load one URL in a fresh session and return its rendered HTML.
     ///
-    /// WebDriver gives no access to the HTTP status line, so `status` is reported
-    /// as 200 whenever a document was retrieved at all. Callers should lean on the
-    /// verdict rather than the status for browser-tier results.
+    /// WebDriver gives no access to the HTTP status line, so browser results leave
+    /// it unknown. Callers should lean on the verdict instead.
     pub async fn fetch(&self, url: &str, timeout: Duration, settle: Duration) -> Result<Fetched> {
         let started = Instant::now();
+        let deadline = started + timeout;
         let endpoint = format!("http://127.0.0.1:{}", self.port);
 
         // rustls rather than native-tls on purpose: native-tls links OpenSSL, and
         // wreq already links BoringSSL for TLS fingerprinting. Both in one binary
         // collide at link time on Linux with undefined SSL_* symbols.
-        let client = ClientBuilder::rustls()
-            .context("initialising the WebDriver TLS backend")?
-            .capabilities(self.capabilities())
-            .connect(&endpoint)
+        let mut builder =
+            ClientBuilder::rustls().context("initialising the WebDriver TLS backend")?;
+        builder.capabilities(self.capabilities());
+        let connect = builder.connect(&endpoint);
+        let client = tokio::time::timeout(remaining(deadline)?, connect)
             .await
+            .context("browser deadline expired while opening Firefox")?
             .context("opening a Firefox session")?;
 
-        let result = self.load(&client, url, timeout, settle).await;
+        let result = self.load(&client, url, deadline, settle).await;
         // Always close the session, even if the load failed, or Firefox windows leak.
-        let _ = client.close().await;
+        let _ = tokio::time::timeout(Duration::from_secs(1), client.close()).await;
 
         let (html, final_url) = result?;
+        let source_bytes = html.len();
         Ok(Fetched {
-            status: 200,
+            status: None,
             final_url,
-            html,
+            content_type: Some("text/html; rendered=true".into()),
+            source_bytes,
+            body: FetchedBody::Html(html),
             elapsed_ms: started.elapsed().as_millis() as u64,
         })
     }
@@ -109,50 +115,82 @@ impl Browser {
         &self,
         client: &fantoccini::Client,
         url: &str,
-        timeout: Duration,
+        deadline: Instant,
         settle: Duration,
     ) -> Result<(String, String)> {
         // A timeout is not automatically fatal: the page may have rendered enough to
         // be useful before the last asset stalled, so take whatever is there.
-        let nav = tokio::time::timeout(timeout, client.goto(url));
+        let nav = tokio::time::timeout(remaining(deadline)?, client.goto(url));
         if let Ok(r) = nav.await {
             r.context("navigating")?;
         }
 
         // Give client-side rendering a moment to populate the DOM.
-        tokio::time::sleep(settle).await;
-        let _ = client.find(Locator::Css("body")).await;
+        sleep_within(deadline, settle).await?;
+        if let Ok(within) = remaining(deadline) {
+            let _ = tokio::time::timeout(within, client.find(Locator::Css("body"))).await;
+        }
 
         // A Cloudflare challenge needs several seconds of JavaScript before the real
         // page replaces it. Reading the DOM once, immediately, returns the
         // interstitial, so poll until the wall clears or the budget runs out.
-        let mut html = client.source().await.context("reading page source")?;
+        let mut html = tokio::time::timeout(remaining(deadline)?, client.source())
+            .await
+            .context("browser deadline expired while reading the page")?
+            .context("reading page source")?;
         if crate::verdict::is_interstitial(&html) {
-            let deadline = Instant::now() + timeout;
             while Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(750)).await;
-                match client.source().await {
-                    Ok(next) => {
+                sleep_within(deadline, Duration::from_millis(750)).await?;
+                let Ok(within) = remaining(deadline) else {
+                    break;
+                };
+                match tokio::time::timeout(within, client.source()).await {
+                    Ok(Ok(next)) => {
                         let cleared = !crate::verdict::is_interstitial(&next);
                         html = next;
                         if cleared {
                             // Let the page that replaced it finish rendering.
-                            tokio::time::sleep(settle).await;
-                            html = client.source().await.unwrap_or(html);
+                            sleep_within(deadline, settle).await?;
+                            if let Ok(within) = remaining(deadline) {
+                                if let Ok(Ok(next)) =
+                                    tokio::time::timeout(within, client.source()).await
+                                {
+                                    html = next;
+                                }
+                            }
                             break;
                         }
                     }
-                    Err(_) => break,
+                    _ => break,
                 }
             }
         }
-        let final_url = client
-            .current_url()
-            .await
-            .map(|u| u.to_string())
-            .unwrap_or_else(|_| url.to_string());
+        let final_url = if let Ok(within) = remaining(deadline) {
+            tokio::time::timeout(within, client.current_url())
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| url.to_string())
+        } else {
+            url.to_string()
+        };
         Ok((html, final_url))
     }
+}
+
+fn remaining(deadline: Instant) -> Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|duration| !duration.is_zero())
+        .context("browser deadline expired")
+}
+
+async fn sleep_within(deadline: Instant, duration: Duration) -> Result<()> {
+    tokio::time::timeout(remaining(deadline)?, tokio::time::sleep(duration))
+        .await
+        .context("browser deadline expired")?;
+    Ok(())
 }
 
 impl Drop for Browser {

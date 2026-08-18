@@ -1,6 +1,7 @@
 # ycrawl
 
-`ycrawl` fetches a web page and turns the useful part into clean markdown.
+`ycrawl` reads a web page and turns the useful part into clean markdown. It also
+works with plain-text files and PDFs that contain selectable text.
 
 ```bash
 ycrawl https://doc.rust-lang.org/book/ch01-00-getting-started.html
@@ -48,6 +49,7 @@ ycrawl --max-chars 4000 <URL>      truncate the body
 ycrawl --no-images <URL>           omit images
 ycrawl --escalate never <URL>      disable browser fallback
 ycrawl --concurrency 8 a b c       fetch several URLs concurrently
+ycrawl --fail-on-error a b c       fail if any page could not be read
 ycrawl --html-file page.html       convert a local HTML file
 ```
 
@@ -64,9 +66,10 @@ You can pass several URLs in one command. They are fetched concurrently.
 
 ## Browser fallback and verdicts
 
-Most pages are fetched directly. If the result looks like a JavaScript shell or a
+Most pages are read directly. If the result looks like a JavaScript shell or a
 Cloudflare challenge, ycrawl can retry it in headless Firefox. It avoids opening a
-browser when the first result is already useful or when a retry is unlikely to help.
+browser when the first result is already useful, the page is simply missing, or a
+retry is unlikely to help.
 
 Each result includes a verdict:
 
@@ -84,15 +87,17 @@ every site that loads an anti-bot script as blocked.
 
 ## Output
 
-ycrawl extracts the main content with
-[`dom_smoothie`](https://crates.io/crates/dom_smoothie) and converts it with
-[`htmd`](https://crates.io/crates/htmd). If main-content extraction drops too much,
-it falls back to converting the whole document.
+ycrawl looks for the main part of a page first. If that would remove useful
+material, such as a listing or a large table, it keeps the wider document instead.
+PDFs are returned page by page so the original boundaries remain clear.
 
 The markdown includes YAML frontmatter with the URL, title, word count, verdict,
 and fetch tier. Relative links become absolute, common tracking parameters are
 removed, code blocks keep their language where possible, and page controls,
 scripts, styles, iframes, and inline SVG are dropped.
+
+JSON output includes every fetch attempt and its timing. This makes it clear when a
+browser was tried but the original result was still the better one.
 
 ## Benchmarks
 
@@ -140,8 +145,9 @@ other installation options.
 
 - ycrawl fetches URLs; it does not search for them.
 - DataDome and PerimeterX blocked every browser tested by the benchmark.
-- Browser results report HTTP 200 because WebDriver does not expose the response
+- Firefox does not expose the response status, so browser results show an unknown
   status. Use the verdict instead.
+- Image-only scanned PDFs need OCR, which ycrawl does not currently provide.
 - Browser fallback is slower and needs local Firefox and geckodriver.
 
 ## Development

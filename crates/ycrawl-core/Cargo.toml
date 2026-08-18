@@ -9,15 +9,15 @@ tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
-thiserror.workspace = true
 url.workspace = true
-regex.workspace = true
+futures-util.workspace = true
+serde_yaml = "0.9"
+encoding_rs = "0.8"
 
-wreq = "6.0.0-rc.29"
+wreq = { version = "6.0.0-rc.29", features = ["stream"] }
 wreq-util = "3.0.0-rc.6"
 dom_smoothie = "0.18"
 htmd = "0.5"
-scraper = "0.25"
 dom_query = "0.28"
 pdf-extract = "0.12"
 fantoccini = { version = "0.22", default-features = false, features = ["rustls-tls"] }

@@ -11,8 +11,7 @@ path = "src/main.rs"
 [dependencies]
 ycrawl-core.workspace = true
 tokio.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 clap.workspace = true
-url.workspace = true
+futures-util.workspace = true
