@@ -16,6 +16,28 @@ It also tells you *why* a page came back empty. A bot wall and a genuinely blank
 
 Every design decision here is measured rather than assumed. The `ycrawl-bench/` harness in the neighbouring directory runs candidate engines against 55 live URLs chosen for how they resist automated access, and the numbers throughout this README come from it.
 
+## Compared with the obvious alternatives
+
+Reaching for `curl` is the reflex, but for an agent it is rarely the real default — most coding agents ship a built-in fetch tool that already converts a page to text. ycrawl is aimed at where both of those fall down.
+
+| | `curl` / `wget` | built-in agent fetch | headless browser | ycrawl |
+|---|---|---|---|---|
+| Survives TLS fingerprinting | no | varies | yes | yes |
+| Renders JavaScript | no | no | yes | on demand |
+| What you get back | raw HTML | a model's summary | raw DOM | clean markdown |
+| Stripe API reference costs | 447,849 tokens | opaque | ~100k tokens | **3,269 tokens** |
+| Says *why* it failed | status code | an error | no | a verdict |
+| Several URLs at once | shell scripting | one at a time | yes | yes |
+| Cost of a page that cannot be fetched | retry forever | retry forever | ~5 s to the same wall | told to stop |
+
+**Against `curl`.** Most "works in my browser, 403s in my script" failures are decided at the TLS handshake, before a single byte of HTTP is sent — so a spoofed user-agent changes nothing. Measured on the benchmark corpus, plain curl cleared 5 of 18 bot-walled pages and the identical requests with a browser fingerprint cleared 9. curl also hands back raw HTML: the Stripe API reference is roughly 448,000 tokens of markup, against 3,269 tokens of markdown from ycrawl carrying the same prose.
+
+**Against a built-in fetch tool.** Those are genuinely good at "answer this question about this page", and they need no install. Two things they do not do: they hand back a summary rather than the document, so you cannot grep it, quote it exactly, or feed it anywhere downstream; and when a page is defended they fail opaquely. ycrawl returns the actual markdown, and distinguishes an empty page from a Cloudflare interstitial from a DataDome wall — which is the difference between an agent reporting "that site blocks automated access" and an agent silently returning nothing, or retrying forever.
+
+**Against driving a headless browser yourself.** That works, and it is what ycrawl falls back to. But paying four seconds and 300 MB for every fetch is the wrong default when a fingerprinted HTTP request clears the same page in 180 ms — and, measured here, headless Chromium clears no more bot walls than a plain HTTP client does. The browser is worth having for the third of pages that need it, and worth skipping for the rest.
+
+**What ycrawl is not.** It does not search — it fetches a URL you already have. It will not get you past DataDome or PerimeterX; nothing tested here does, and it says so rather than pretending.
+
 ## Features
 
 - **Two-tier fetching** — HTTP with a real browser TLS fingerprint first, headless Firefox only where a browser measurably helps
