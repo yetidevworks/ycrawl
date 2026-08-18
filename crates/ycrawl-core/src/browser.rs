@@ -6,11 +6,11 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// A resident geckodriver process. Sessions are opened per page and closed after,
-/// but the driver itself stays up — cold-starting it per URL dominates the cost.
+/// but the driver itself stays up, because cold-starting it per URL dominates the cost.
 ///
 /// Firefox rather than Chromium is a measured choice, not a preference. On 46
 /// bot-walled targets a headless Firefox cleared 34 where every Chromium build
-/// cleared 26 — the same score a plain TLS-impersonating HTTP client achieves at a
+/// cleared 26, the same score a plain TLS-impersonating HTTP client achieves at a
 /// thirtieth of the cost. A Chromium tier would have earned nothing.
 pub struct Browser {
     driver: Child,
@@ -125,7 +125,7 @@ impl Browser {
 
         // A Cloudflare challenge needs several seconds of JavaScript before the real
         // page replaces it. Reading the DOM once, immediately, returns the
-        // interstitial — so poll until the wall clears or the budget runs out.
+        // interstitial, so poll until the wall clears or the budget runs out.
         let mut html = client.source().await.context("reading page source")?;
         if crate::verdict::is_interstitial(&html) {
             let deadline = Instant::now() + timeout;

@@ -54,7 +54,7 @@ pub enum Verdict {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Escalation {
-    /// Not needed — we already have the content.
+    /// Not needed. We already have the content.
     Unnecessary,
     /// Measured to recover a useful share of these.
     Worthwhile,
@@ -109,7 +109,7 @@ impl Verdict {
 ///
 /// The distinction matters: an earlier version of this logic treated Cloudflare's
 /// `challenge-platform` script as proof of a block, but Cloudflare injects that on
-/// successful loads too — so pages that had been fetched perfectly were scored as
+/// successful loads too, so pages that had been fetched perfectly were scored as
 /// blocked. Vendor-presence strings never decide a verdict; only these do.
 const WALLS: &[(Wall, &[&str])] = &[
     (
@@ -191,8 +191,8 @@ const MIN_CONTENT_WORDS: usize = 15;
 /// seekingalpha.com serves 1,305 words of market data while carrying PerimeterX's
 /// `px-captcha` markup three times over, and udemy.com renders its full homepage
 /// with the string "Just a moment" sitting in the source. Both were being reported
-/// as blocked. An interstitial is short by nature — the Cloudflare one runs to
-/// roughly 30 words — so a page well past that floor has plainly been served.
+/// as blocked. An interstitial is short by nature. The Cloudflare one runs to
+/// roughly 30 words, so a page well past that floor has plainly been served.
 const SERVED_CONTENT_WORDS: usize = 80;
 
 /// Whether the raw HTML is an anti-bot interstitial, ignoring content entirely.

@@ -26,7 +26,7 @@ struct Args {
     #[arg(long)]
     json: bool,
 
-    /// Print only the metadata line for each page — no body. Use this to triage
+    /// Print only the metadata line for each page. No body. Use this to triage
     /// a set of URLs before pulling any content.
     #[arg(long)]
     summary: bool,
@@ -58,7 +58,7 @@ struct Args {
     /// When to fall back to a headless Firefox: auto, never, or always.
     ///
     /// "auto" escalates only where benchmarking showed a browser actually recovers
-    /// pages — shells, JavaScript-only pages and Cloudflare interstitials. It does
+    /// pages: shells, JavaScript-only pages and Cloudflare interstitials. It does
     /// not escalate into DataDome or PerimeterX, which held against every engine
     /// tested including real Chrome.
     #[arg(long, default_value = "auto", value_parser = ["auto", "never", "always"])]
@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
     }
 
     // Phase 2: escalate only the pages a browser is measured to recover. Sessions
-    // run sequentially — geckodriver serves one at a time, and by design this path
+    // run sequentially. geckodriver serves one at a time, and by design this path
     // should be the exception rather than the rule.
     let wanted: Vec<usize> = results
         .iter()
@@ -268,7 +268,7 @@ fn emit(page: &Page, args: &Args, separator: bool) {
             page.meta.final_url,
             page.meta.verdict.explain(),
             escalation_hint(page)
-                .map(|h| format!(" — {h}"))
+                .map(|h| format!(". {h}"))
                 .unwrap_or_default()
         );
     }
@@ -291,8 +291,8 @@ fn escalation_hint(page: &Page) -> Option<String> {
         Escalation::Unnecessary => None,
         Escalation::Worthwhile => Some("a browser would plausibly recover this page".into()),
         Escalation::Futile => Some(
-            "this wall held against every engine benchmarked, including real Chrome — \
-             a browser will not help"
+            "this wall held against every engine benchmarked, including real Chrome. \
+             A browser will not help"
                 .into(),
         ),
     }

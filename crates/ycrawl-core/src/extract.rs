@@ -8,7 +8,7 @@ use htmd::HtmlToMarkdown;
 /// Below this many characters, readability is treated as having failed outright.
 /// Benchmarking showed readability returning literally nothing on listing pages
 /// (the Hacker News front page), while legitimately reducing a short chapter page
-/// to under 300 characters — so the floor has to be low enough not to punish
+/// to under 300 characters, so the floor has to be low enough not to punish
 /// genuinely short articles.
 const MIN_ARTICLE_CHARS: usize = 200;
 
@@ -57,7 +57,7 @@ pub fn extract(
             (Some(title), byline, content, ExtractPath::Article)
         }
         // Readability came back empty or near-empty. That is the listing-page
-        // failure mode, not a short page — fall back to the whole document.
+        // failure mode, not a short page. Fall back to the whole document.
         _ => (
             document_title(&cleaned),
             None,
@@ -104,7 +104,7 @@ pub fn extract(
 ///
 /// Readability scores by text and link density, which is the right instinct for an
 /// article and the wrong one for an index. On the Hacker News front page it
-/// discarded all 98 rows and returned the stories as loose prose — more tokens than
+/// discarded all 98 rows and returned the stories as loose prose, more tokens than
 /// the raw DOM conversion, and without the structure that made them readable.
 /// Page size alone cannot detect this; only the structure can.
 fn discards_listing(source_rows: usize, kept_rows: usize) -> bool {

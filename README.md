@@ -1,77 +1,58 @@
 # ycrawl
 
-Fetch a web page, get clean markdown. Nothing is cached, indexed, or written to disk.
+Point it at a URL. Get clean markdown back. Nothing gets cached, indexed, or written to disk.
 
 ```bash
 ycrawl https://doc.rust-lang.org/book/ch01-00-getting-started.html
 ```
 
-## The problem
+## Why I built it
 
-Agent web tooling burns tokens two ways: it fetches pages that hand back navigation instead of content, and it pipes whatever it got straight into the conversation. A single documentation page can cost 15,000 tokens when the useful part was three paragraphs.
+Agent web tooling wastes tokens in two ways. It fetches pages that hand back a navigation menu instead of an article, and then it dumps whatever it got straight into the conversation. One documentation page can cost you 15,000 tokens when the part you wanted was three paragraphs.
 
-ycrawl attacks both. Extraction strips the furniture, and the output modes let an agent triage a set of URLs for about twenty tokens each before deciding what is worth reading.
+ycrawl fixes both. Extraction throws away the furniture, and `--summary` lets an agent check what a page actually contains for about twenty tokens before deciding to read it.
 
-It also tells you *why* a page came back empty. A bot wall and a genuinely blank page are different problems, and an agent that cannot distinguish them will retry forever or quietly report nothing.
+It also tells you why a page came back empty. That matters more than it sounds. A bot wall and a blank page look identical to most tools, so an agent either retries forever or quietly reports nothing and moves on.
 
-Every design decision here is measured rather than assumed. The [`ycrawl-bench`](https://github.com/yetidevworks/ycrawl-bench) harness runs candidate engines against 55 live URLs chosen for how they resist automated access, and the numbers throughout this README come from it.
+Every decision here got measured instead of guessed. The [ycrawl-bench](https://github.com/yetidevworks/ycrawl-bench) harness runs candidate engines against 55 live URLs picked for how hard they push back, and every number in this README comes out of it. Some of the results surprised me.
 
 ## Why a local binary
 
-Hosted services in this space — Firecrawl and the like — pitch themselves as infrastructure: *the context API to search, scrape, and interact with the web at scale*. That is an accurate description of what they are, and if you need to crawl an entire site, run structured extraction across thousands of pages, or get through walls that need residential IP rotation, use one. Genuinely. ycrawl does none of that and is not trying to.
+Hosted services like Firecrawl pitch themselves as infrastructure. "The context API to search, scrape, and interact with the web at scale." That's a fair description of what they are, and if you need to crawl a whole site or get through walls that want residential IP rotation, go use one. ycrawl does none of that.
 
-ycrawl is the other end of the trade. It is one binary on your machine that reads a page well.
+It sits at the other end of the trade. One binary, on your machine, that reads a page well.
 
-- **No key, no credits, no per-page cost.** Fetch the same documentation page fifty times while you are working through a problem. Nothing meters it.
-- **Nothing leaves your machine.** No third party learns which URLs you read — which matters more than it sounds if you are reading competitor pages, client sites, or internal docs.
-- **No service to be up.** No network round-trip to somebody else's API before the round-trip to the page you wanted. Tier 1 fetches land in about 180 ms.
-- **It tells you the truth.** Content, shell, JavaScript-only, or a named bot wall — and whether anything would get past it. That is the difference between an agent saying "that site blocks automated access" and an agent silently handing you nothing.
-- **Narrow on purpose.** One job: URL in, clean markdown out. No crawler, no scheduler, no dashboard, no account.
+No key. No credits. No per-page cost, so hammer the same docs page fifty times while you work through a problem and nothing meters you. Nothing leaves your machine either, which matters if the pages you read are competitor sites or client work or internal docs. And there's no service to be down, no round trip to somebody else's API before the round trip to the page you actually wanted.
 
-The bet is that most of what an agent actually needs from the web is *this page, right now, cleanly* — and that the honest answer when a page cannot be read is worth as much as the page itself.
+The bet is that most of what an agent needs from the web is this page, right now, cleanly. And that a straight answer about why a page can't be read is worth as much as the page.
 
-## Compared with your agent's built-in fetch
+## Compared to your agent's built-in fetch
 
-Most coding agents already ship a web fetch tool — Claude Code's `WebFetch`, and the equivalents in Cursor, Codex and the rest. Those are the real incumbents here, not `curl`, and they are good at what they do: zero install, and a solid answer to "what does this page say about X".
+Your agent probably ships one already. Claude Code has `WebFetch`, Cursor and Codex have their own. Those are the real competition, not `curl`, and they're good at what they do. Zero install, decent answers.
 
-ycrawl is aimed at the three places they run out of road.
+Three places they run out of road.
 
-**You get a summary, not the document.** A built-in fetch typically runs a small model over the page and hands back *its* answer. That is lossy and unquotable — you cannot grep it, cite an exact line, diff it against last week's version, or pass it to anything downstream. If the small model missed the paragraph you needed, you have no way to know. ycrawl returns the actual markdown, with headings, fenced code and absolute links intact.
+**You get a summary, not the page.** A small model reads the page and hands back its answer. You can't grep that. You can't quote an exact line, diff it against last week, or pass it to anything downstream. And if the small model skipped the paragraph you needed, nothing tells you. ycrawl gives you the markdown, headings and code fences and absolute links intact.
 
-**Failure is opaque.** When a page is defended, a built-in fetch gives you an error, not a diagnosis. The agent cannot tell an empty page from a Cloudflare interstitial from a commercial bot wall, so it does the two worst things available: retries something that will never work, or quietly reports nothing and moves on. ycrawl names the wall and says whether anything would get past it.
+**Failures are opaque.** A defended page returns an error, not a diagnosis. So your agent can't tell an empty page from a Cloudflare interstitial from DataDome, and it does one of the two worst things available: retry something that will never work, or hand you nothing and say the page was empty.
 
-**No escalation, and no choice about it.** Built-in fetches are one-shot HTTP. A JavaScript-rendered page comes back empty and stays empty. ycrawl escalates to a real browser exactly where that is measured to help — about a third of fetches — and skips it everywhere else.
+**No escalation.** Built-in fetches are one-shot HTTP. A JavaScript-rendered page comes back empty and stays empty.
 
-| | built-in agent fetch | `curl` / `wget` | headless browser | ycrawl |
+| | built-in agent fetch | `curl` | headless browser | ycrawl |
 |---|---|---|---|---|
-| What you get back | a model's summary | raw HTML | raw DOM | clean markdown |
-| Stripe API reference costs | opaque | 447,849 tokens | ~100k tokens | **3,269 tokens** |
+| What you get | a model's summary | raw HTML | raw DOM | clean markdown |
+| Stripe API reference | opaque | 447,849 tokens | ~100k tokens | **3,269 tokens** |
 | Survives TLS fingerprinting | varies | no | yes | yes |
-| Renders JavaScript | no | no | always | on demand |
-| Says *why* it failed | an error | a status code | no | a verdict |
-| Several URLs at once | one at a time | shell scripting | yes | yes |
-| A page that cannot be fetched | retries forever | retries forever | ~5 s to the same wall | told to stop |
+| Renders JavaScript | no | no | always | when it helps |
+| Tells you why it failed | an error | a status code | no | a verdict |
+| Batch several URLs | one at a time | shell scripting | yes | yes |
+| A page it can't fetch | retries forever | retries forever | 5s to the same wall | tells you to stop |
 
-**On `curl`.** It is the reflex, but it is not really the competition — nobody defends it as a page-reading tool. Worth one measurement anyway, because the failure is not the one people expect: "works in my browser, 403s in my script" is usually decided at the TLS handshake, before a byte of HTTP is sent, so spoofing the user-agent changes nothing. Plain curl cleared 5 of 18 bot-walled pages here; the identical requests with a browser fingerprint cleared 9.
+`curl` isn't really the competition, but it's worth one measurement because the failure isn't the one people expect. "Works in my browser, 403s in my script" gets decided at the TLS handshake, before a byte of HTTP goes out. Spoofing your user-agent does nothing. Plain curl cleared 5 of 18 bot-walled pages in testing. Same requests with a browser fingerprint cleared 9.
 
-**On driving a headless browser yourself.** That works, and it is what ycrawl falls back to. But paying four seconds and 300 MB on every fetch is the wrong default when a fingerprinted HTTP request clears the same page in 180 ms — and, measured here, headless Chromium clears no more bot walls than a plain HTTP client does. Worth having for the third of pages that need it; worth skipping for the rest.
-
-**What ycrawl is not.** It does not search — it fetches a URL you already have, so pair it with your agent's search tool. And it will not get you past DataDome or PerimeterX. Nothing tested here does, and it says so rather than pretending.
-
-## Features
-
-- **Two-tier fetching** — HTTP with a real browser TLS fingerprint first, headless Firefox only where a browser measurably helps
-- **Honest verdicts** — every fetch reports whether it got content, a shell, or a specific bot wall
-- **Evidence-based escalation** — never burns seconds on walls that no engine has been able to pass
-- **Readable markdown** — fenced code with language tags, real tables, absolute links, no nav or tracking parameters
-- **Agent-first output modes** — metadata-only triage, truncation, links-only, JSON and NDJSON
-- **Fingerprint choice** — Chrome, Firefox, Safari, or a market-share weighted random profile
-- **Local replay** — convert a saved HTML file instead of fetching, for testing extraction changes
-- **Ships a Claude Code skill** so an agent reaches for it correctly without being told how
+Driving a headless browser yourself works too, and that's exactly what ycrawl falls back to. But paying four seconds and 300MB on every fetch is a bad default when a fingerprinted HTTP request gets the same page in 180ms.
 
 ## Installation
-
-Homebrew:
 
 ```bash
 brew tap yetidevworks/ycrawl
@@ -79,45 +60,28 @@ brew trust yetidevworks/ycrawl
 brew install ycrawl
 ```
 
-The `brew trust` step is not optional — recent Homebrew refuses to load formulae from third-party taps until you trust them explicitly.
+Don't skip `brew trust`. Recent Homebrew refuses to load formulae from third-party taps until you trust them, and you'll get a wall of an error instead of an install.
 
-Prebuilt binaries for macOS and Linux, arm64 and x86_64, are attached to each [release](https://github.com/yetidevworks/ycrawl/releases).
-
-From source:
+Prebuilt binaries for macOS and Linux, arm64 and x86_64, hang off every [release](https://github.com/yetidevworks/ycrawl/releases). Or build it:
 
 ```bash
 cargo install --path crates/ycrawl-cli
 ```
 
-Browser escalation additionally needs Firefox and geckodriver:
+Browser escalation needs Firefox and geckodriver on top of that:
 
 ```bash
 brew install geckodriver
 ```
 
-Without them tier 1 still works, and ycrawl says why it could not escalate rather than failing silently.
-
-## Quick start
-
-```bash
-# Triage first — metadata only, no body
-ycrawl --summary https://docs.stripe.com/api/charges
-# https://docs.stripe.com/api/charges  [200]  1422 words  1295ms  content  via Http
-#   title: Charges | Stripe API Reference
-
-# Then pull the body once you know it is worth pulling
-ycrawl https://docs.stripe.com/api/charges
-
-# Several URLs in one call — fetched concurrently, one browser reused for escalations
-ycrawl --summary url1 url2 url3
-```
+Skip them and tier 1 still works fine. ycrawl will tell you why it couldn't escalate rather than failing quietly.
 
 ## Usage
 
 ```
 ycrawl <URL>...                    markdown with YAML frontmatter
 ycrawl --summary <URL>...          one metadata line per page, no body
-ycrawl --json <URL>...             JSON; NDJSON when given several URLs
+ycrawl --json <URL>...             JSON, or NDJSON for several URLs
 ycrawl --links <URL>               outbound links only, absolute
 ycrawl --max-chars 4000 <URL>      truncate the body, with a marker
 ycrawl --no-images <URL>           drop image markup
@@ -127,100 +91,115 @@ ycrawl --concurrency 8 a b c       several URLs at once
 ycrawl --html-file page.html       convert a local file instead of fetching
 ```
 
+Lead with `--summary`. It costs almost nothing and tells you whether a page is worth reading:
+
+```
+$ ycrawl --summary https://docs.stripe.com/api/charges
+https://docs.stripe.com/api/charges  [200]  1422 words  1295ms  content  via Http
+  title: Charges | Stripe API Reference
+```
+
 ## Verdicts
 
-Every fetch reports what it actually got, and whether a browser would do better. The recovery rates below are measured: each tier-1 failure in the corpus was re-run through a real Firefox to see what a browser actually buys.
+Every fetch says what it got, and whether a browser would do better. Those recovery rates are measured. I took every tier-1 failure in the corpus and re-ran it through a real Firefox to see what a browser actually buys you.
 
-| verdict | meaning | browser worth trying? |
+| verdict | what it means | browser worth trying? |
 |---|---|---|
 | `content` | real page text | not needed |
-| `thin` | parsed, but a shell | yes — 6/10 recovered |
+| `thin` | parsed, but it's a shell | yes, 6 of 10 recovered |
 | `js-required` | page says it needs scripting | yes |
-| `blocked by Cloudflare challenge` | interstitial | yes — 3/4 recovered |
-| `blocked by DataDome` / `PerimeterX` | commercial bot wall | **no** — 0/6 recovered |
+| `blocked by Cloudflare challenge` | interstitial | yes, 3 of 4 recovered |
+| `blocked by DataDome` / `PerimeterX` | commercial bot wall | no. 0 of 6 recovered |
 
-DataDome and PerimeterX held against every engine tested, including real Chrome. ycrawl reports them instead of spending five seconds arriving at the same wall:
+DataDome and PerimeterX held against every engine I tested, real Chrome included. So ycrawl reports them instead of burning five seconds to arrive at the same wall:
 
 ```
 https://www.yelp.com/  [403]  8 words  107ms  blocked by DataDome  via Http
-  this wall held against every engine benchmarked, including real Chrome — a browser will not help
+  this wall held against every engine benchmarked, including real Chrome. A browser will not help
 ```
 
-Classification runs against raw HTML, before cleaning, because several wall signatures live in script and iframe sources that extraction strips out.
+Classification runs on raw HTML before cleaning, because several wall signatures live in script and iframe sources that extraction strips out.
 
-Two rules keep it honest, both learned from false positives that scored correctly-fetched pages as blocked:
+Two rules keep it honest, and I learned both the hard way after scoring perfectly good fetches as blocked.
 
-- **Vendor-presence strings never decide a verdict.** Cloudflare injects `challenge-platform` on *successful* loads; treating it as proof of a block mis-scored four working pages.
-- **Substantial body text outranks challenge markup.** seekingalpha.com serves 1,305 words while carrying PerimeterX's `px-captcha` three times over, and udemy.com renders its homepage with "Just a moment" sitting in the source.
+Vendor-presence strings never decide a verdict on their own. Cloudflare injects `challenge-platform` on successful loads too, and treating that as proof of a block mis-scored four working pages.
+
+Body text beats challenge markup. seekingalpha.com serves 1,305 words of market data while carrying PerimeterX's `px-captcha` three times over. udemy.com renders its whole homepage with "Just a moment" sitting in the source. Both were getting reported as blocked.
 
 ## How it works
 
-**Tier 1 — HTTP with a browser fingerprint.** Most "works in the browser, 403s in a script" failures are decided at the TLS handshake, before a byte of HTTP is exchanged. Presenting a real Chrome JA3/JA4 and HTTP/2 fingerprint via [`wreq`](https://crates.io/crates/wreq) took bot-walled pages from 5/18 to 9/18 with no browser involved, at a 126 ms median. It is the highest-value single measure in the whole stack.
+**Tier 1 is HTTP with a browser fingerprint.** Most of those "works in my browser" failures get decided at the TLS handshake. Presenting a real Chrome JA3/JA4 and HTTP/2 fingerprint through [`wreq`](https://crates.io/crates/wreq) took bot-walled pages from 5 of 18 to 9 of 18, with no browser anywhere, at a 126ms median. Best single thing in the whole stack.
 
-**Tier 2 — headless Firefox.** Reached only when the verdict says a browser helps. Firefox rather than Chromium is a measured choice, and an uncomfortable one:
+**Tier 2 is headless Firefox**, and only when the verdict says a browser helps. Firefox over Chromium is measured, not preference, and the result annoyed me:
 
-| engine | bot-walled pages cleared (of 46) |
+| engine | bot-walled pages cleared, of 46 |
 |---|---|
 | WebKit | 35 |
 | **Firefox** | **34** |
-| Chromium (headless) | 26 |
-| Chrome (real, headless) | 26 |
-| HTTP + TLS fingerprint | 26 |
+| Chromium, headless | 26 |
+| Chrome, real, headless | 26 |
+| HTTP with a TLS fingerprint | 26 |
 
-Headless Chromium ties a plain HTTP client at a thirtieth of the speed. A Chromium tier would have earned nothing. Firefox is the pick over WebKit because geckodriver gives a clean Rust path where WebKit would drag in a Node runtime.
+Headless Chromium ties a plain HTTP client. Thirty times slower for nothing. A Chromium tier would have been dead weight. Firefox wins over WebKit on plumbing: geckodriver gives a clean Rust path, WebKit drags in a Node runtime.
 
-Stealth-patching Chromium — nulling `navigator.webdriver`, spoofing WebGL, restoring `window.chrome`, stripping the automation flag — changed nothing: 8/18 either way on the 18-target subset where it was measured. Modern detection reads the handshake, not those properties.
+And stealth patching did nothing at all. Nulling `navigator.webdriver`, spoofing WebGL, restoring `window.chrome`, stripping the automation flag: 8 of 18 either way on the subset where I measured it. Detection happens at the handshake, long before any of those properties can be read.
 
-geckodriver stays resident and sessions open per page; cold-starting it per URL dominates otherwise. Cloudflare interstitials need several seconds of JavaScript before the real page appears, so the browser tier polls the DOM until the wall clears rather than reading it once and returning the challenge.
+geckodriver stays resident and sessions open per page, because cold-starting it every time dominates everything else. Cloudflare interstitials need several seconds of JavaScript before the real page shows up, so the browser tier polls the DOM until the wall clears instead of reading it once and returning the challenge.
 
-**Extraction.** [`dom_smoothie`](https://crates.io/crates/dom_smoothie) finds the main content and [`htmd`](https://crates.io/crates/htmd) converts it. When readability returns almost nothing, or discards a data table it should have kept, ycrawl falls back to whole-document conversion and reports `path: document` so you can tell which ran.
+**Extraction** runs [`dom_smoothie`](https://crates.io/crates/dom_smoothie) to find the main content and [`htmd`](https://crates.io/crates/htmd) to convert it. When readability comes back with nothing, or throws away a data table it should have kept, ycrawl falls back to whole-document conversion and reports `path: document` so you know which one ran.
 
 ## Markdown fidelity
 
-Structure is where extraction quality actually lives, so several conventions are normalised before conversion:
+Structure is where extraction quality actually lives. A few conventions get normalised before conversion.
 
-- **Bare `<pre>` becomes a fenced code block.** Converters only fence `<pre><code>`, and plenty of documentation ships neither — the Python docs among them, where 34 code blocks were arriving as loose prose.
-- **Language tags are recovered** from `language-x`, `lang-x`, `highlight-python3` (Sphinx), `highlight-source-x` (GitHub) and `brush: js` (MDN). Syntax-highlight `<span>` soup inside code is discarded, which is pure token cost otherwise.
-- **Headerless data tables gain a header** so they survive as markdown tables instead of collapsing into loose cells. Layout tables — nested, or with ragged rows — are deliberately left as prose, because forcing Hacker News into a grid reads worse than the paragraph form.
-- **Site controls are dropped.** Hide, flag, vote and reply each cost a full absolute URL and carry nothing a reader wants.
-- **Links are absolute and clean.** Resolution happens before conversion, since once a link is `[text](/some/path)` the base is gone. Tracking parameters are stripped.
-- **Scripts, styles, iframes and inline SVG are removed.** An icon set alone can cost thousands of tokens.
+Bare `<pre>` becomes a fenced code block. Converters only fence `<pre><code>`, and plenty of docs ship neither. The Python docs are the case that caught me: 34 code blocks were arriving as loose prose.
 
-Against the reference tools on six pages, ycrawl produces fewer tokens than Obscura on five and retains 87–119% of each document's non-link prose.
+Language tags get recovered from `language-x`, `lang-x`, `highlight-python3` (Sphinx), `highlight-source-x` (GitHub) and `brush: js` (MDN). Syntax-highlight `<span>` soup inside code gets thrown out, since it's pure token cost.
 
-One caveat on that comparison: heading and row counts are **not** a fair yardstick against tools that keep navigation. Obscura reports 111 headings on the Stripe API reference and 11 on the Svelte docs; those are sidebars. ycrawl keeps 5 and 0 while retaining 89% and 87% of the real prose.
+Headerless data tables get a header so they survive as markdown tables rather than collapsing into loose cells. Layout tables, the nested or ragged ones, stay as prose. Forcing Hacker News into a grid reads worse than paragraphs.
+
+Site controls get dropped. Hide, flag, vote, reply. Each one costs a full absolute URL and carries nothing you want.
+
+Links come out absolute with tracking parameters stripped, and that has to happen before conversion. Once a link is `[text](/some/path)` the base is gone. Scripts, styles, iframes and inline SVG go too, since an icon set on its own can run to thousands of tokens.
+
+Against the reference tools on six pages, ycrawl produces fewer tokens than Obscura on five of them and keeps 87% to 119% of each document's non-link prose.
+
+One caveat on that comparison. Heading and row counts are a bad yardstick against tools that keep navigation. Obscura reports 111 headings on the Stripe API reference and 11 on the Svelte docs. Those are sidebars. ycrawl keeps 5 and 0, and still retains 89% and 87% of the real prose.
 
 ## Results
 
-Measured on the 55-URL benchmark corpus — 9 undefended pages plus 46 behind bot walls, login walls or paywalls.
+Measured across the 55-URL corpus: 9 undefended pages, 46 behind bot walls, login walls or paywalls.
 
 | | tier 1 only | with escalation |
 |---|---|---|
 | Undefended pages | 9/9 | 9/9 |
-| Bot-walled / paywalled | 22/46 | **34/46** |
-| Median fetch | 180 ms | 479 ms |
+| Bot-walled or paywalled | 22/46 | **34/46** |
+| Median fetch | 180ms | 479ms |
 
-The router earns its keep: 58% of fetches never touch a browser, 31% escalate where it pays, and 11% hit walls where escalation is correctly refused.
+The router does real work. 58% of fetches never touch a browser, 31% escalate where it pays, and 11% hit walls where escalating gets refused. Those refusals would have cost about five seconds each to learn nothing.
 
 ## Agent skill
 
-`claude-plugin/` ships a Claude Code skill so an agent uses ycrawl well without being told how.
+`claude-plugin/` ships a Claude Code skill so an agent uses ycrawl properly without being told how.
 
 ```
 /plugin marketplace add /path/to/ycrawl
 /plugin install ycrawl@ycrawl-local
 ```
 
-It teaches three things that matter more than the flag list: run `--summary` first so a 15,000-token page body never lands in context uninvited; read the verdict before retrying; and stop entirely on DataDome or PerimeterX rather than looping.
+It teaches three things that matter more than the flag list. Run `--summary` first so a 15,000-token page body never lands in context uninvited. Read the verdict before retrying. And stop on DataDome or PerimeterX instead of looping.
 
-Verified end to end. A fresh agent given only the skill — with ycrawl's source explicitly off limits — batched both URLs into one `--summary` call, pulled only the body that had content, followed a link and capped it with `--max-chars`, never retried the walled page, and reported the block plainly with alternatives. Command logging confirmed its self-report exactly.
+I tested it end to end. A fresh agent, given only the skill and with ycrawl's source explicitly off limits, batched both URLs into one `--summary` call, pulled only the body that had content, followed a link and capped it with `--max-chars`, never retried the walled page, and reported the block plainly with alternatives. Command logging confirmed its self-report exactly.
 
-## Limitations
+## What it won't do
 
-- **Commercial bot walls stay shut.** DataDome and PerimeterX resisted every engine tested. That is a residential-IP problem, which is rented rather than built, and ycrawl says so instead of pretending otherwise.
-- **Browser-tier results always report HTTP 200.** WebDriver exposes no status line. Trust the verdict, not the status.
-- **ycrawl does not search.** It fetches a URL you already have.
-- **The Firefox advantage may be self-erasing.** It is most likely an artefact of anti-bot vendors prioritising the engine everyone automates. If Firefox-based scraping becomes common the gap closes, which is the argument for keeping the benchmark harness maintained.
+Commercial bot walls stay shut. DataDome and PerimeterX beat every engine I tested. That's a residential IP problem, which you rent rather than build, and ycrawl says so instead of pretending.
+
+Browser-tier results always report HTTP 200, because WebDriver exposes no status line. Trust the verdict, not the status.
+
+ycrawl doesn't search. It fetches a URL you already have, so pair it with whatever search tool your agent already has.
+
+And the Firefox advantage might erase itself. It's most likely an artifact of anti-bot vendors aiming at the engine everyone automates. If Firefox-based scraping gets popular the gap closes, which is the argument for keeping the benchmark harness alive rather than trusting a number from August 2026.
 
 ## Development
 
@@ -230,7 +209,7 @@ cargo build --release
 ycrawl --html-file saved.html           # replay a saved response through the classifier
 ```
 
-[`ycrawl-bench`](https://github.com/yetidevworks/ycrawl-bench) holds the measurement harness: `targets.json` is the corpus, `run.py` fetches with every candidate engine, `report.py` classifies, `eval_ycrawl.py` scores the real binary, and `quality.py` compares markdown output against the reference tools. Adding an engine is one function.
+[ycrawl-bench](https://github.com/yetidevworks/ycrawl-bench) holds the measurement harness. `targets.json` is the corpus, `run.py` fetches with every candidate engine, `report.py` classifies, `eval_ycrawl.py` scores the real binary, `quality.py` compares markdown against the reference tools. Adding an engine is one function.
 
 ## Layout
 

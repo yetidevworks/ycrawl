@@ -45,7 +45,7 @@ pub fn preclean(html: &str, base_url: &str) -> String {
             if let Some(href) = node.attr("href") {
                 match absolutize(&base, &href) {
                     Some(abs) => node.set_attr("href", &abs),
-                    // javascript:, mailto:, in-page anchors — keep the text, drop the link
+                    // javascript:, mailto:, in-page anchors. Keep the text, drop the link
                     None => node.remove_attr("href"),
                 }
             }
@@ -71,7 +71,7 @@ pub fn preclean(html: &str, base_url: &str) -> String {
 /// Rewrite every `<pre>` into `<pre><code class="language-X">`.
 ///
 /// Two problems are fixed at once. Markdown converters only fence a `<pre>` that
-/// contains a `<code>`, and plenty of documentation ships bare `<pre>` — the Python
+/// contains a `<code>`, and plenty of documentation ships bare `<pre>`. The Python
 /// docs among them, which is why 34 code blocks were arriving as loose prose.
 /// Replacing the contents with plain text also discards the syntax-highlight
 /// `<span>` soup, which is pure token cost in the output.
@@ -117,7 +117,7 @@ const FURNITURE_LINKS: &[&str] = &[
 
 /// Remove links that operate the site rather than describe it.
 ///
-/// Listing pages attach a row of controls to every item — hide, flag, vote — and
+/// Listing pages attach a row of controls to every item (hide, flag, vote) and
 /// each one costs a full absolute URL in the markdown. On the Hacker News front
 /// page these accounted for most of 181 links without carrying any information a
 /// reader would want.
@@ -146,8 +146,8 @@ fn drop_furniture_links(doc: &Document) {
 /// without a header row.
 ///
 /// Layout tables are deliberately left alone. A table containing another table, or
-/// with ragged row lengths, is being used for positioning rather than data — Hacker
-/// News is the obvious example — and forcing those into a grid reads worse than the
+/// with ragged row lengths, is being used for positioning rather than data. Hacker
+/// News is the obvious example, and forcing those into a grid reads worse than the
 /// prose form.
 fn promote_table_headers(doc: &Document) {
     for table in doc.select("table").iter() {
@@ -346,7 +346,7 @@ fn is_furniture(line: &str) -> bool {
     if SKIP.iter().any(|s| lower.contains(s)) {
         return true;
     }
-    // an empty markdown link, e.g. `[](https://…)` — pure noise
+    // an empty markdown link, e.g. `[](https://…)`, pure noise
     line.starts_with("[](")
 }
 
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn bare_pre_becomes_a_fenced_code_block() {
         // The Python docs ship `<pre>` with no `<code>`, and converters only fence
-        // `<pre><code>` — 34 code blocks were arriving as loose prose.
+        // `<pre><code>`, so 34 code blocks were arriving as loose prose.
         let out = clean(
             r#"<div class="highlight-python3"><div class="highlight"><pre>print(1)</pre></div></div>"#,
         );
