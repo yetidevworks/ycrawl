@@ -82,7 +82,11 @@ impl Browser {
         let started = Instant::now();
         let endpoint = format!("http://127.0.0.1:{}", self.port);
 
-        let client = ClientBuilder::native()
+        // rustls rather than native-tls on purpose: native-tls links OpenSSL, and
+        // wreq already links BoringSSL for TLS fingerprinting. Both in one binary
+        // collide at link time on Linux with undefined SSL_* symbols.
+        let client = ClientBuilder::rustls()
+            .context("initialising the WebDriver TLS backend")?
             .capabilities(self.capabilities())
             .connect(&endpoint)
             .await
