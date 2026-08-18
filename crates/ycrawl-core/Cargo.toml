@@ -19,4 +19,5 @@ dom_smoothie = "0.18"
 htmd = "0.5"
 scraper = "0.25"
 dom_query = "0.28"
+pdf-extract = "0.12"
 fantoccini = { version = "0.22", default-features = false, features = ["rustls-tls"] }

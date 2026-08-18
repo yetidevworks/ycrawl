@@ -108,11 +108,28 @@ live URLs, including ordinary pages, bot walls, login walls, and paywalls.
 These figures are a snapshot from August 2026. Anti-bot systems change, so the
 benchmark is kept separate and repeatable rather than treated as a permanent claim.
 
-## Claude Code skill
+## Agent skills
 
-`claude-plugin/` contains a Claude Code skill that teaches an agent to check
-summaries first, batch URLs, and stop retrying pages that ycrawl identifies as
-blocked.
+The included Claude Code and Codex skills teach agents to check summaries first,
+batch URLs, and stop retrying pages that ycrawl identifies as blocked.
+
+### Codex
+
+Codex finds the skill in `.agents/skills/ycrawl/` automatically when you open this
+project. Use it directly with `$ycrawl`, or let Codex select it when you ask to read
+a URL.
+
+To make it available in every project, link it from your personal skills folder:
+
+```bash
+mkdir -p ~/.agents/skills
+ln -s /path/to/ycrawl/.agents/skills/ycrawl ~/.agents/skills/ycrawl
+```
+
+See the [Codex skill documentation](https://learn.chatgpt.com/docs/build-skills) for
+other installation options.
+
+### Claude Code
 
 ```text
 /plugin marketplace add /path/to/ycrawl
@@ -139,6 +156,7 @@ ycrawl --html-file saved.html
 crates/ycrawl-core    fetching, extraction, verdicts, and browser fallback
 crates/ycrawl-cli     command-line interface
 claude-plugin/        Claude Code skill
+.agents/skills/       Codex skill
 ```
 
 ## License
