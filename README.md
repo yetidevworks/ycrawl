@@ -71,6 +71,20 @@ ycrawl is aimed at the three places they run out of road.
 
 ## Installation
 
+Homebrew:
+
+```bash
+brew tap yetidevworks/ycrawl
+brew trust yetidevworks/ycrawl
+brew install ycrawl
+```
+
+The `brew trust` step is not optional — recent Homebrew refuses to load formulae from third-party taps until you trust them explicitly.
+
+Prebuilt binaries for macOS and Linux, arm64 and x86_64, are attached to each [release](https://github.com/yetidevworks/ycrawl/releases).
+
+From source:
+
 ```bash
 cargo install --path crates/ycrawl-cli
 ```
