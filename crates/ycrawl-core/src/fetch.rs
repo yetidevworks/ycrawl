@@ -73,6 +73,12 @@ pub fn client(timeout_secs: u64, profile: Profile) -> Result<Client> {
     Client::builder()
         .emulation(profile.emulation())
         .timeout(Duration::from_secs(timeout_secs))
+        // wreq does not follow redirects on its own. Its ClientBuilder::redirect
+        // doc comment claims "Default will follow redirects up to a maximum of
+        // 10", but the default really is Policy::none(), so leaving this unset
+        // returns the redirect stub instead of the page: a bare domain that
+        // redirects to www, an http URL upgrading to https, or any short link.
+        .redirect(wreq::redirect::Policy::limited(10))
         .build()
         .context("building HTTP client")
 }
