@@ -16,27 +16,33 @@ It also tells you *why* a page came back empty. A bot wall and a genuinely blank
 
 Every design decision here is measured rather than assumed. The `ycrawl-bench/` harness in the neighbouring directory runs candidate engines against 55 live URLs chosen for how they resist automated access, and the numbers throughout this README come from it.
 
-## Compared with the obvious alternatives
+## Compared with your agent's built-in fetch
 
-Reaching for `curl` is the reflex, but for an agent it is rarely the real default — most coding agents ship a built-in fetch tool that already converts a page to text. ycrawl is aimed at where both of those fall down.
+Most coding agents already ship a web fetch tool — Claude Code's `WebFetch`, and the equivalents in Cursor, Codex and the rest. Those are the real incumbents here, not `curl`, and they are good at what they do: zero install, and a solid answer to "what does this page say about X".
 
-| | `curl` / `wget` | built-in agent fetch | headless browser | ycrawl |
+ycrawl is aimed at the three places they run out of road.
+
+**You get a summary, not the document.** A built-in fetch typically runs a small model over the page and hands back *its* answer. That is lossy and unquotable — you cannot grep it, cite an exact line, diff it against last week's version, or pass it to anything downstream. If the small model missed the paragraph you needed, you have no way to know. ycrawl returns the actual markdown, with headings, fenced code and absolute links intact.
+
+**Failure is opaque.** When a page is defended, a built-in fetch gives you an error, not a diagnosis. The agent cannot tell an empty page from a Cloudflare interstitial from a commercial bot wall, so it does the two worst things available: retries something that will never work, or quietly reports nothing and moves on. ycrawl names the wall and says whether anything would get past it.
+
+**No escalation, and no choice about it.** Built-in fetches are one-shot HTTP. A JavaScript-rendered page comes back empty and stays empty. ycrawl escalates to a real browser exactly where that is measured to help — about a third of fetches — and skips it everywhere else.
+
+| | built-in agent fetch | `curl` / `wget` | headless browser | ycrawl |
 |---|---|---|---|---|
-| Survives TLS fingerprinting | no | varies | yes | yes |
-| Renders JavaScript | no | no | yes | on demand |
-| What you get back | raw HTML | a model's summary | raw DOM | clean markdown |
-| Stripe API reference costs | 447,849 tokens | opaque | ~100k tokens | **3,269 tokens** |
-| Says *why* it failed | status code | an error | no | a verdict |
-| Several URLs at once | shell scripting | one at a time | yes | yes |
-| Cost of a page that cannot be fetched | retry forever | retry forever | ~5 s to the same wall | told to stop |
+| What you get back | a model's summary | raw HTML | raw DOM | clean markdown |
+| Stripe API reference costs | opaque | 447,849 tokens | ~100k tokens | **3,269 tokens** |
+| Survives TLS fingerprinting | varies | no | yes | yes |
+| Renders JavaScript | no | no | always | on demand |
+| Says *why* it failed | an error | a status code | no | a verdict |
+| Several URLs at once | one at a time | shell scripting | yes | yes |
+| A page that cannot be fetched | retries forever | retries forever | ~5 s to the same wall | told to stop |
 
-**Against `curl`.** Most "works in my browser, 403s in my script" failures are decided at the TLS handshake, before a single byte of HTTP is sent — so a spoofed user-agent changes nothing. Measured on the benchmark corpus, plain curl cleared 5 of 18 bot-walled pages and the identical requests with a browser fingerprint cleared 9. curl also hands back raw HTML: the Stripe API reference is roughly 448,000 tokens of markup, against 3,269 tokens of markdown from ycrawl carrying the same prose.
+**On `curl`.** It is the reflex, but it is not really the competition — nobody defends it as a page-reading tool. Worth one measurement anyway, because the failure is not the one people expect: "works in my browser, 403s in my script" is usually decided at the TLS handshake, before a byte of HTTP is sent, so spoofing the user-agent changes nothing. Plain curl cleared 5 of 18 bot-walled pages here; the identical requests with a browser fingerprint cleared 9.
 
-**Against a built-in fetch tool.** Those are genuinely good at "answer this question about this page", and they need no install. Two things they do not do: they hand back a summary rather than the document, so you cannot grep it, quote it exactly, or feed it anywhere downstream; and when a page is defended they fail opaquely. ycrawl returns the actual markdown, and distinguishes an empty page from a Cloudflare interstitial from a DataDome wall — which is the difference between an agent reporting "that site blocks automated access" and an agent silently returning nothing, or retrying forever.
+**On driving a headless browser yourself.** That works, and it is what ycrawl falls back to. But paying four seconds and 300 MB on every fetch is the wrong default when a fingerprinted HTTP request clears the same page in 180 ms — and, measured here, headless Chromium clears no more bot walls than a plain HTTP client does. Worth having for the third of pages that need it; worth skipping for the rest.
 
-**Against driving a headless browser yourself.** That works, and it is what ycrawl falls back to. But paying four seconds and 300 MB for every fetch is the wrong default when a fingerprinted HTTP request clears the same page in 180 ms — and, measured here, headless Chromium clears no more bot walls than a plain HTTP client does. The browser is worth having for the third of pages that need it, and worth skipping for the rest.
-
-**What ycrawl is not.** It does not search — it fetches a URL you already have. It will not get you past DataDome or PerimeterX; nothing tested here does, and it says so rather than pretending.
+**What ycrawl is not.** It does not search — it fetches a URL you already have, so pair it with your agent's search tool. And it will not get you past DataDome or PerimeterX. Nothing tested here does, and it says so rather than pretending.
 
 ## Features
 
