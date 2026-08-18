@@ -1,5 +1,5 @@
 use std::time::Duration;
-use ycrawl_core::Browser;
+use ycrawl_core::{Browser, FetchedBody};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,11 +12,12 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     eprintln!(
         "got {} bytes in {}ms, final_url={}",
-        f.html.len(),
-        f.elapsed_ms,
-        f.final_url
+        f.source_bytes, f.elapsed_ms, f.final_url
     );
-    let text: String = f.html.chars().take(300).collect();
+    let text: String = match f.body {
+        FetchedBody::Html(html) | FetchedBody::Text(html) => html.chars().take(300).collect(),
+        FetchedBody::Pdf(_) => "[PDF]".into(),
+    };
     eprintln!("head: {text}");
     Ok(())
 }

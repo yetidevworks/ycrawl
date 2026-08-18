@@ -13,7 +13,9 @@ pub mod types;
 pub mod verdict;
 
 pub use browser::Browser;
-pub use extract::{extract, ExtractOptions};
-pub use fetch::{client, fetch, Fetched, Profile};
-pub use types::{ExtractPath, Meta, Page, Tier};
+pub use extract::{extract, extract_fetched, ExtractMode, ExtractOptions};
+pub use fetch::{
+    client, fetch, fetch_with_limit, Fetched, FetchedBody, Profile, DEFAULT_MAX_BYTES,
+};
+pub use types::{Attempt, ExtractPath, Meta, Page, Tier};
 pub use verdict::{classify, is_interstitial, Escalation, Verdict, Wall};

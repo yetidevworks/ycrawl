@@ -1,6 +1,6 @@
 ---
 name: ycrawl
-description: "Fetch a web page and get clean markdown back. Use whenever you have a URL and need its content: \"read this page\", \"fetch\", \"scrape\", \"grab the content from\", \"what does this page say\", \"get the docs at\", \"pull the changelog\", or any bare URL the user wants you to look at. Handles JavaScript-rendered pages and most bot walls, and tells you plainly when a page is blocked instead of returning an empty result. Use WebSearch first if you need to FIND a URL — ycrawl fetches, it does not search."
+description: "Fetch a web page, text file, or PDF and get clean markdown back. Use whenever you have a URL and need its content: \"read this page\", \"fetch\", \"scrape\", \"grab the content from\", \"what does this page say\", \"get the docs at\", \"pull the changelog\", or any bare URL the user wants you to look at. Handles JavaScript-rendered pages and most bot walls, and tells you plainly when a page is blocked instead of returning an empty result. Use WebSearch first if you need to FIND a URL — ycrawl fetches, it does not search."
 license: MIT
 ---
 
@@ -50,6 +50,7 @@ user "that page is behind a bot wall" and silently handing them nothing.
 | `js-required` | page needs scripting | already retried in a browser |
 | `blocked by Cloudflare challenge` | interstitial | already retried; usually succeeds |
 | `blocked by DataDome` / `PerimeterX` | commercial bot wall | **stop.** Tell the user. Retrying will not work |
+| `HTTP 404` | the page is missing | stop; a browser will not change it |
 
 ycrawl escalates to a real browser on its own where that is measured to help, so a
 non-`content` verdict means the browser tier already ran or was deliberately skipped.
@@ -72,6 +73,8 @@ When a page is blocked, report it plainly:
 | `--escalate never` | tier 1 only — fast, skips the browser |
 | `--no-images` | drop image markup |
 | `--timeout N` | per-request seconds, default 20 |
+| `--fail-on-error` | fail a batch when any URL could not be read |
+| `--max-bytes N` | refuse a response over N bytes, default 20 MB |
 
 ## What you get
 
@@ -87,8 +90,10 @@ their language. Navigation, cookie banners, scripts and inline SVG are removed.
   works and ycrawl says why it could not escalate.
 - Escalation to a browser costs a few seconds; `--escalate never` when speed matters
   more than reach.
-- Browser-tier results always report HTTP 200 — WebDriver exposes no status line.
-  Trust the verdict, not the status.
+- Browser-tier results show an unknown status because WebDriver exposes no status
+  line. Trust the verdict, not the status.
+- PDFs with selectable text are returned page by page. Image-only scans need OCR,
+  which ycrawl does not provide.
 - `--html-file <PATH>` converts a local HTML file instead of fetching.
 - ycrawl does not search. Find the URL with WebSearch, then fetch it here.
 

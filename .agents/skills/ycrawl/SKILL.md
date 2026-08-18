@@ -1,6 +1,6 @@
 ---
 name: ycrawl
-description: Fetch a known web page URL with the local ycrawl command and return clean markdown. Use when the user asks to read, fetch, scrape, inspect, quote, or extract content or links from a URL. ycrawl fetches pages but does not search for them.
+description: Fetch a known web page, text file, or PDF URL with the local ycrawl command and return clean markdown. Use when the user asks to read, fetch, scrape, inspect, quote, or extract content or links from a URL. ycrawl fetches URLs but does not search for them.
 license: MIT
 ---
 
@@ -53,6 +53,7 @@ Read the verdict before deciding what to do next:
 | `js-required` / `page requires JavaScript` | Browser fallback was attempted or unavailable; report the result |
 | `blocked by Cloudflare challenge` | Browser fallback was attempted or unavailable; report the result |
 | `blocked by DataDome` / `PerimeterX` | Stop and tell the user the page is blocked |
+| `HTTP 404` | The page is missing; do not retry it |
 
 ycrawl automatically retries with Firefox when a browser is likely to help. Do not
 repeat the same request after a non-content verdict. For DataDome or PerimeterX,
@@ -72,13 +73,17 @@ contain useful content.
 | `--no-images` | Leave images out of the markdown |
 | `--escalate never` | Skip browser fallback |
 | `--timeout N` | Set the direct-fetch timeout in seconds |
+| `--fail-on-error` | Fail a batch if any URL could not be read |
+| `--max-bytes N` | Refuse a response larger than N bytes (default 20 MB) |
 
 ## Requirements and limits
 
 - `ycrawl` must be installed and available on `PATH`.
 - Browser fallback also needs Firefox and geckodriver. Direct fetching works without
   them.
-- Browser results report HTTP 200 because WebDriver does not expose the original
-  response status. Trust the verdict instead.
+- Browser results show an unknown status because Firefox does not expose the
+  original response status. Trust the verdict instead.
+- PDFs with selectable text are returned page by page. Image-only scans need OCR,
+  which ycrawl does not provide.
 - `ycrawl --html-file <PATH>` converts a local HTML file without fetching a URL.
 - ycrawl does not search the web.

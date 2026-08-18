@@ -21,7 +21,7 @@ const DROP: &[&str] = &[
 /// Query parameters that only ever identify a campaign, never a resource.
 const TRACKING_PREFIXES: &[&str] = &["utm_", "mc_", "pk_"];
 const TRACKING_EXACT: &[&str] = &[
-    "gclid", "fbclid", "msclkid", "igshid", "ref", "ref_src", "spm", "yclid", "_ga",
+    "gclid", "fbclid", "msclkid", "igshid", "ref_src", "spm", "yclid", "_ga",
 ];
 
 /// Strip noise and rewrite every link to an absolute URL.
@@ -31,6 +31,12 @@ const TRACKING_EXACT: &[&str] = &[
 /// anyone reading the output later.
 pub fn preclean(html: &str, base_url: &str) -> String {
     let doc = Document::from(html);
+    let document_base = doc
+        .select("base[href]")
+        .iter()
+        .next()
+        .and_then(|node| node.attr("href"))
+        .map(|value| value.to_string());
 
     for sel in DROP {
         doc.select(sel).remove();
@@ -40,12 +46,16 @@ pub fn preclean(html: &str, base_url: &str) -> String {
     promote_table_headers(&doc);
     drop_furniture_links(&doc);
 
-    if let Ok(base) = Url::parse(base_url) {
+    if let Ok(request_base) = Url::parse(base_url) {
+        let base = document_base
+            .as_deref()
+            .and_then(|value| request_base.join(value).ok())
+            .unwrap_or(request_base);
         for node in doc.select("a[href]").iter() {
             if let Some(href) = node.attr("href") {
                 match absolutize(&base, &href) {
                     Some(abs) => node.set_attr("href", &abs),
-                    // javascript:, mailto:, in-page anchors. Keep the text, drop the link
+                    // Non-navigational schemes keep their text but lose the link.
                     None => node.remove_attr("href"),
                 }
             }
@@ -269,7 +279,7 @@ fn escape_html(s: &str) -> String {
 /// Resolve `href` against `base`, dropping non-navigational schemes and tracking noise.
 pub fn absolutize(base: &Url, href: &str) -> Option<String> {
     let href = href.trim();
-    if href.is_empty() || href.starts_with('#') {
+    if href.is_empty() {
         return None;
     }
     let lower = href.to_ascii_lowercase();
@@ -283,7 +293,6 @@ pub fn absolutize(base: &Url, href: &str) -> Option<String> {
         return None;
     }
     strip_tracking(&mut url);
-    url.set_fragment(None);
     Some(url.to_string())
 }
 
@@ -425,6 +434,24 @@ mod tests {
         let out = clean(r#"<a href="../other?utm_source=x&keep=1">t</a>"#);
         assert!(out.contains("https://example.com/other"), "got: {out}");
         assert!(out.contains("keep=1"));
+        assert!(!out.contains("utm_source"));
+    }
+
+    #[test]
+    fn document_base_and_fragments_are_preserved() {
+        let out =
+            clean(r#"<base href="https://cdn.example.org/guide/"><a href="part#section">read</a>"#);
+        assert!(
+            out.contains("https://cdn.example.org/guide/part#section"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn ref_is_not_assumed_to_be_tracking() {
+        let base = Url::parse("https://example.com").unwrap();
+        let out = absolutize(&base, "/docs?ref=api&utm_source=news").unwrap();
+        assert!(out.contains("ref=api"));
         assert!(!out.contains("utm_source"));
     }
 

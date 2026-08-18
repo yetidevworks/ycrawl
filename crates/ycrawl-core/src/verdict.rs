@@ -58,6 +58,8 @@ pub enum Escalation {
     Unnecessary,
     /// Measured to recover a useful share of these.
     Worthwhile,
+    /// A browser is unlikely to change the result (for example, a missing page).
+    NotRecommended,
     /// Measured not to help. Report the wall instead of burning time on it.
     Futile,
 }
@@ -81,9 +83,13 @@ impl Verdict {
         match self {
             Verdict::Content => Escalation::Unnecessary,
             Verdict::Thin { .. } | Verdict::JsRequired => Escalation::Worthwhile,
-            Verdict::HttpError { .. } => Escalation::Worthwhile,
+            Verdict::HttpError { status } => match status {
+                403 | 406 | 418 | 429 => Escalation::Worthwhile,
+                _ => Escalation::NotRecommended,
+            },
             Verdict::Blocked { wall } => match wall {
                 Wall::DataDome | Wall::PerimeterX | Wall::Anubis => Escalation::Futile,
+                Wall::LoginWall => Escalation::NotRecommended,
                 _ => Escalation::Worthwhile,
             },
         }
@@ -218,30 +224,39 @@ pub fn is_interstitial(raw_html: &str) -> bool {
 /// signatures live in script and iframe sources that extraction deliberately
 /// strips.
 pub fn classify(raw_html: &str, status: u16, extracted_words: usize) -> Verdict {
-    // Content first. A page that handed us substantial body text was not blocked,
-    // whatever anti-bot markup it also happens to load.
-    if extracted_words >= SERVED_CONTENT_WORDS {
-        return Verdict::Content;
-    }
-
     let head: String = raw_html
         .chars()
         .take(400_000)
         .collect::<String>()
         .to_ascii_lowercase();
 
-    for (wall, needles) in WALLS {
+    let wall = WALLS.iter().find_map(|(wall, needles)| {
         if needles.iter().any(|n| head.contains(n)) {
-            return Verdict::Blocked { wall: *wall };
+            Some(*wall)
+        } else {
+            None
         }
+    });
+
+    // Error pages can be verbose. A long 404 is still a missing page, while a
+    // recognisable challenge response is more useful when reported as its wall.
+    if status >= 400 {
+        return wall
+            .map(|wall| Verdict::Blocked { wall })
+            .unwrap_or(Verdict::HttpError { status });
+    }
+
+    // A successful page with substantial body text outranks stray anti-bot markup.
+    if extracted_words >= SERVED_CONTENT_WORDS {
+        return Verdict::Content;
+    }
+
+    if let Some(wall) = wall {
+        return Verdict::Blocked { wall };
     }
 
     if JS_REQUIRED.iter().any(|n| head.contains(n)) && extracted_words < 100 {
         return Verdict::JsRequired;
-    }
-
-    if status >= 400 {
-        return Verdict::HttpError { status };
     }
 
     if extracted_words < MIN_CONTENT_WORDS {
@@ -313,6 +328,26 @@ mod tests {
         assert_eq!(
             classify("<html><body>ok</body></html>", 200, 17),
             Verdict::Content
+        );
+    }
+
+    #[test]
+    fn verbose_error_page_is_still_an_http_error() {
+        assert_eq!(
+            classify("<html><body>missing</body></html>", 404, 1_000),
+            Verdict::HttpError { status: 404 }
+        );
+        assert_eq!(
+            classify("<html><body>missing</body></html>", 404, 1_000).escalation(),
+            Escalation::NotRecommended
+        );
+    }
+
+    #[test]
+    fn throttling_can_still_be_worth_a_browser_attempt() {
+        assert_eq!(
+            Verdict::HttpError { status: 429 }.escalation(),
+            Escalation::Worthwhile
         );
     }
 }
