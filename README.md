@@ -50,6 +50,7 @@ ycrawl --no-images <URL>           omit images
 ycrawl --escalate never <URL>      disable browser fallback
 ycrawl --concurrency 8 a b c       fetch several URLs concurrently
 ycrawl --fail-on-error a b c       fail if any page could not be read
+ycrawl --max-bytes 5000000 <URL>   refuse responses over this size
 ycrawl --html-file page.html       convert a local HTML file
 ```
 
@@ -97,7 +98,13 @@ removed, code blocks keep their language where possible, and page controls,
 scripts, styles, iframes, and inline SVG are dropped.
 
 JSON output includes every fetch attempt and its timing. This makes it clear when a
-browser was tried but the original result was still the better one.
+browser was tried but the original result was still the better one. Each result also
+carries an `escalation` field saying whether a browser is worth trying: `unnecessary`,
+`worthwhile`, `not-recommended` for responses a browser will not change, such as a
+404, or `futile` for walls that held against every engine benchmarked.
+
+Responses larger than 20 MB are refused rather than read into memory. Use
+`--max-bytes` to raise or lower that.
 
 ## Benchmarks
 

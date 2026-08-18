@@ -9,14 +9,32 @@ use htmd::HtmlToMarkdown;
 use std::collections::HashSet;
 use url::Url;
 
+/// Below this many characters, readability is treated as having failed outright.
+/// Benchmarking showed readability returning literally nothing on listing pages
+/// (the Hacker News front page), while legitimately reducing a short chapter page
+/// to under 300 characters, so the floor has to be low enough not to punish
+/// genuinely short articles.
 const MIN_ARTICLE_CHARS: usize = 200;
+
+/// A page with at least this many table rows is carrying tabular data, not using
+/// a table for layout decoration.
 const LISTING_ROW_FLOOR: usize = 15;
+
+/// If readability keeps a smaller share of those rows than this, it has treated a
+/// data table as boilerplate and thrown it away.
 const LISTING_KEEP_RATIO: f32 = 0.25;
 
+/// What the caller intends to do with the result.
+///
+/// This decides what is worth collecting, never how the page is read: every mode
+/// runs the same extraction so that the metadata a summary reports is the
+/// metadata the full fetch would have produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtractMode {
     #[default]
     Full,
+    /// Metadata only. The body is still extracted, because the word count and the
+    /// verdict are derived from it, but the links are not collected.
     Summary,
     Links,
 }
@@ -73,7 +91,6 @@ pub fn extract_fetched(
             tier,
             source_bytes,
             content_type,
-            opts,
         )),
         FetchedBody::Pdf(bytes) => extract_pdf(
             &bytes,
@@ -84,7 +101,6 @@ pub fn extract_fetched(
             tier,
             source_bytes,
             content_type,
-            opts,
         ),
     }
 }
@@ -129,44 +145,35 @@ fn extract_html(
     let description = meta_description(&cleaned);
     let title = document_title(&cleaned);
 
-    let (title, byline, body_html, path) = if opts.mode == ExtractMode::Full {
-        let source_rows = count_rows(&cleaned);
-        match readable(&cleaned, final_url) {
-            Some((readable_title, byline, content))
-                if content.trim().len() >= MIN_ARTICLE_CHARS
-                    && !discards_listing(source_rows, count_rows(&content)) =>
-            {
-                (Some(readable_title), byline, content, ExtractPath::Article)
-            }
-            _ => (title, None, body_of(&cleaned), ExtractPath::Document),
+    // Every mode runs the same extraction. A summary that picked a different path
+    // or counted words differently would not be describing the page the caller is
+    // about to ask for, which is the only thing a summary is for.
+    let source_rows = count_rows(&cleaned);
+    let (title, byline, body_html, path) = match readable(&cleaned, final_url) {
+        Some((readable_title, byline, content))
+            if content.trim().len() >= MIN_ARTICLE_CHARS
+                && !discards_listing(source_rows, count_rows(&content)) =>
+        {
+            (Some(readable_title), byline, content, ExtractPath::Article)
         }
-    } else {
-        (title, None, body_of(&cleaned), ExtractPath::Document)
+        // Readability came back empty or near-empty. That is the listing-page
+        // failure mode, not a short page. Fall back to the whole document.
+        _ => (title, None, body_of(&cleaned), ExtractPath::Document),
     };
 
-    let words = Document::from(body_html.as_str())
-        .text()
-        .split_whitespace()
-        .count();
-    let markdown = if opts.mode == ExtractMode::Full {
-        markdown_converter(opts)
-            .convert(&body_html)
-            .map(|md| tidy_markdown(&md))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    let words = if opts.mode == ExtractMode::Full {
-        markdown.split_whitespace().count()
-    } else {
-        words
-    };
-    let links = if opts.mode != ExtractMode::Summary {
-        collect_links(&body_html)
-    } else {
+    let markdown = markdown_converter(opts)
+        .convert(&body_html)
+        .map(|md| tidy_markdown(&md))
+        .unwrap_or_default();
+    let words = markdown.split_whitespace().count();
+    let links = if opts.mode == ExtractMode::Summary {
         Vec::new()
+    } else {
+        collect_links(&body_html, final_url)
     };
 
+    // Classification runs against the raw HTML, not the cleaned copy: several wall
+    // signatures live in script and iframe sources that cleaning strips out.
     let verdict = verdict::classify(html, status.unwrap_or(200), words);
     make_page(
         requested_url,
@@ -197,7 +204,6 @@ fn extract_text(
     tier: Tier,
     source_bytes: usize,
     content_type: Option<String>,
-    opts: &ExtractOptions,
 ) -> Page {
     let words = text.split_whitespace().count();
     let verdict = verdict::classify(&text, status.unwrap_or(200), words);
@@ -215,11 +221,7 @@ fn extract_text(
         ExtractPath::Text,
         verdict,
         tier,
-        if opts.mode == ExtractMode::Full {
-            text.trim().to_string()
-        } else {
-            String::new()
-        },
+        text.trim().to_string(),
         vec![],
     )
 }
@@ -234,7 +236,6 @@ fn extract_pdf(
     tier: Tier,
     source_bytes: usize,
     content_type: Option<String>,
-    opts: &ExtractOptions,
 ) -> Result<Page> {
     let pages =
         pdf_extract::extract_text_from_mem_by_pages(bytes).context("extracting text from PDF")?;
@@ -246,19 +247,15 @@ fn extract_pdf(
         .join("\n\n");
     let words = plain.split_whitespace().count();
     let verdict = verdict::classify(&plain, status.unwrap_or(200), words);
-    let markdown = if opts.mode == ExtractMode::Full {
-        pages
-            .iter()
-            .enumerate()
-            .filter_map(|(index, page)| {
-                let page = page.trim();
-                (!page.is_empty()).then(|| format!("## Page {}\n\n{page}", index + 1))
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    } else {
-        String::new()
-    };
+    let markdown = pages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, page)| {
+            let page = page.trim();
+            (!page.is_empty()).then(|| format!("## Page {}\n\n{page}", index + 1))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
     Ok(make_page(
         requested_url,
@@ -320,17 +317,55 @@ fn make_page(
     }
 }
 
+/// A stand-in title for formats that carry no title of their own.
 fn title_from_url(url: &str) -> Option<String> {
-    let name = Url::parse(url)
-        .ok()?
-        .path_segments()?
-        .next_back()?
-        .trim_end_matches(".pdf")
-        .trim_end_matches(".txt")
-        .replace(['-', '_'], " ");
+    let parsed = Url::parse(url).ok()?;
+    let last = parsed.path_segments()?.next_back()?;
+    let decoded = percent_decode(last);
+    // strip_suffix, not trim_end_matches: the latter strips the suffix repeatedly,
+    // turning "report.pdf.pdf" into "report".
+    let stem = [".pdf", ".txt", ".md", ".text"]
+        .iter()
+        .find_map(|suffix| decoded.strip_suffix(suffix))
+        .unwrap_or(&decoded);
+    let name = stem.replace(['-', '_'], " ");
     (!name.trim().is_empty()).then_some(name)
 }
 
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                match u8::from_str_radix(&value[index + 1..index + 3], 16) {
+                    Ok(byte) => {
+                        out.push(byte);
+                        index += 3;
+                    }
+                    Err(_) => {
+                        out.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| value.to_string())
+}
+
+/// Whether readability threw away a data table.
+///
+/// Readability scores by text and link density, which is the right instinct for an
+/// article and the wrong one for an index. On the Hacker News front page it
+/// discarded all 98 rows and returned the stories as loose prose, more tokens than
+/// the raw DOM conversion, and without the structure that made them readable.
+/// Page size alone cannot detect this; only the structure can.
 fn discards_listing(source_rows: usize, kept_rows: usize) -> bool {
     source_rows >= LISTING_ROW_FLOOR
         && (kept_rows as f32) < (source_rows as f32) * LISTING_KEEP_RATIO
@@ -352,6 +387,10 @@ fn markdown_converter(opts: &ExtractOptions) -> HtmlToMarkdown {
 
 fn readable(html: &str, url: &str) -> Option<(String, Option<String>, String)> {
     let cfg = Config {
+        // Readability strips class attributes by default, which throws away the
+        // `language-*` hint the markdown converter needs to tag a fenced code
+        // block. Keeping classes costs nothing downstream: htmd ignores every class
+        // it does not recognise, so none of them reach the output.
         keep_classes: true,
         ..Config::default()
     };
@@ -401,19 +440,41 @@ fn body_of(html: &str) -> String {
     }
 }
 
-fn collect_links(html: &str) -> Vec<String> {
+/// The outbound pages a document points at, in the order they appear.
+///
+/// Links keep their fragment in the body markdown, where it names the section
+/// worth landing on. A link list is a list of pages, so the fragment only splits
+/// one destination into many entries and drags every in-page anchor along with
+/// it: the `Vec` page of the std docs yields 93 pages and 1412 raw hrefs.
+fn collect_links(html: &str, page_url: &str) -> Vec<String> {
+    let here = without_fragment(page_url);
     let doc = Document::from(html);
     let mut seen = HashSet::new();
     let mut links = Vec::new();
     for node in doc.select("a[href]").iter() {
         if let Some(href) = node.attr("href") {
-            let href = href.to_string();
-            if seen.insert(href.clone()) {
-                links.push(href);
+            let target = without_fragment(&href);
+            if target == here {
+                continue;
+            }
+            if seen.insert(target.clone()) {
+                links.push(target);
             }
         }
     }
     links
+}
+
+/// Precleaning has already made every surviving href absolute, so this normally
+/// parses; an href that does not is passed through untouched rather than dropped.
+fn without_fragment(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -428,36 +489,90 @@ mod tests {
         }
     }
 
+    fn page_at(html: &str, url: &str, mode: ExtractMode) -> Page {
+        extract(html, url, url, 200, 1, Tier::Http, &options(mode))
+    }
+
+    /// A summary exists to tell the caller what the full fetch will cost them, so
+    /// it has to describe the same extraction, not a cheaper one.
     #[test]
-    fn summary_skips_body_but_keeps_word_count() {
-        let page = extract(
-            "<html><head><title>Hello</title></head><body>one two three</body></html>",
-            "https://example.com",
-            "https://example.com",
-            200,
-            1,
-            Tier::Http,
-            &options(ExtractMode::Summary),
+    fn a_summary_describes_the_body_the_full_fetch_would_return() {
+        let nav: String = (1..40)
+            .map(|i| format!(r#"<li><a href="/n{i}">Navigation entry number {i}</a></li>"#))
+            .collect();
+        let html = format!(
+            "<html><head><title>Doc</title></head><body><nav><ul>{nav}</ul></nav>\
+             <article><p>One short paragraph of actual prose.</p></article>\
+             <footer><ul>{nav}</ul></footer></body></html>"
         );
-        assert_eq!(page.meta.words, 3);
-        assert!(page.markdown.is_empty());
-        assert!(page.links.is_empty());
+
+        let full = page_at(&html, "https://example.com/doc", ExtractMode::Full);
+        let summary = page_at(&html, "https://example.com/doc", ExtractMode::Summary);
+
+        assert_eq!(summary.meta.words, full.meta.words);
+        assert_eq!(summary.meta.verdict, full.meta.verdict);
+        assert_eq!(summary.meta.path, full.meta.path);
+        assert_eq!(summary.meta.title, full.meta.title);
+        // The body is withheld by the caller, not by extraction.
+        assert!(summary.links.is_empty());
     }
 
     #[test]
     fn link_mode_preserves_document_order_and_deduplicates() {
-        let page = extract(
+        let page = page_at(
             r#"<body><a href="/z">z</a><a href="/a">a</a><a href="/z">again</a></body>"#,
             "https://example.com",
-            "https://example.com",
-            200,
-            1,
-            Tier::Http,
-            &options(ExtractMode::Links),
+            ExtractMode::Links,
         );
         assert_eq!(
             page.links,
             vec!["https://example.com/z", "https://example.com/a"]
+        );
+    }
+
+    #[test]
+    fn the_link_list_drops_in_page_anchors_and_ignores_fragments() {
+        let page = page_at(
+            r##"<body>
+                 <a href="#intro">Intro</a>
+                 <a href="#usage">Usage</a>
+                 <a href="/other#method.push">push</a>
+                 <a href="/other#method.pop">pop</a>
+                 <a href="https://elsewhere.example/x">out</a>
+               </body>"##,
+            "https://example.com/guide",
+            ExtractMode::Links,
+        );
+        assert_eq!(
+            page.links,
+            vec!["https://example.com/other", "https://elsewhere.example/x"]
+        );
+    }
+
+    /// The fragment is still worth keeping where it points at a section to read.
+    #[test]
+    fn body_links_keep_their_fragment() {
+        let page = page_at(
+            r#"<body><p><a href="/other#section">deep link</a></p></body>"#,
+            "https://example.com/guide",
+            ExtractMode::Full,
+        );
+        assert!(
+            page.markdown.contains("https://example.com/other#section"),
+            "got: {}",
+            page.markdown
+        );
+    }
+
+    #[test]
+    fn a_repeated_extension_is_only_stripped_once() {
+        assert_eq!(
+            title_from_url("https://example.com/report.pdf.pdf").as_deref(),
+            Some("report.pdf")
+        );
+        assert_eq!(
+            title_from_url("https://example.com/annual%20report.pdf").as_deref(),
+            Some("annual report")
         );
     }
 

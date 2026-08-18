@@ -74,6 +74,7 @@ contain useful content.
 | `--escalate never` | Skip browser fallback |
 | `--timeout N` | Set the direct-fetch timeout in seconds |
 | `--fail-on-error` | Fail a batch if any URL could not be read |
+| `--max-bytes N` | Refuse a response larger than N bytes (default 20 MB) |
 
 ## Requirements and limits
 

@@ -140,22 +140,42 @@ fn decode_body(bytes: Vec<u8>, content_type: Option<&str>) -> Result<FetchedBody
         return Ok(FetchedBody::Pdf(bytes));
     }
 
-    let text_like = mime.is_empty()
-        || mime.starts_with("text/")
-        || matches!(
-            mime.as_str(),
-            "application/xhtml+xml" | "application/xml" | "application/json"
-        );
-    if !text_like {
+    if is_binary_family(&mime) {
         bail!("unsupported content type {mime:?}");
     }
 
+    // Decoding first, then looking for a NUL, catches the payloads worth refusing
+    // without needing a list of every binary media type. Allow-listing readable
+    // types is what turned an ordinary RSS feed into a hard failure.
     let text = decode_text(&bytes, content_type);
-    if mime == "text/plain" || mime == "application/json" {
+    if text.chars().take(8192).any(|c| c == '\0') {
+        bail!("response is not readable text");
+    }
+
+    if is_plain_text(&mime) {
         Ok(FetchedBody::Text(text))
     } else {
+        // Markup, and anything unrecognised. Sites serve real HTML under some odd
+        // content types, so extraction is a better default than a refusal.
         Ok(FetchedBody::Html(text))
     }
+}
+
+/// Media types that are never worth decoding as text.
+fn is_binary_family(mime: &str) -> bool {
+    matches!(
+        mime.split('/').next().unwrap_or_default(),
+        "image" | "audio" | "video" | "font" | "model"
+    )
+}
+
+/// Text that carries no markup, and so should be passed through as it stands
+/// rather than run through HTML extraction.
+fn is_plain_text(mime: &str) -> bool {
+    if mime == "text/html" || mime == "text/xml" {
+        return false;
+    }
+    mime.starts_with("text/") || mime == "application/json" || mime.ends_with("+json")
 }
 
 fn decode_text(bytes: &[u8], content_type: Option<&str>) -> String {
@@ -199,5 +219,48 @@ mod tests {
     #[test]
     fn rejects_binary_content() {
         assert!(decode_body(vec![1, 2, 3], Some("image/png")).is_err());
+        assert!(decode_body(vec![b'P', b'K', 3, 4, 0, 0], Some("application/zip")).is_err());
+    }
+
+    #[test]
+    fn feeds_and_other_markup_are_read_as_html() {
+        for mime in [
+            "application/rss+xml",
+            "application/atom+xml",
+            "application/xml",
+            "text/xml",
+            "application/xhtml+xml",
+            "application/octet-stream",
+        ] {
+            assert!(
+                matches!(
+                    decode_body(
+                        b"<rss><channel><title>Feed</title></channel></rss>".to_vec(),
+                        Some(mime)
+                    )
+                    .unwrap(),
+                    FetchedBody::Html(_)
+                ),
+                "{mime} should be read as markup"
+            );
+        }
+    }
+
+    #[test]
+    fn json_and_prose_are_passed_through_as_text() {
+        for mime in [
+            "text/plain",
+            "text/markdown",
+            "application/json",
+            "application/ld+json",
+        ] {
+            assert!(
+                matches!(
+                    decode_body(b"just some words".to_vec(), Some(mime)).unwrap(),
+                    FetchedBody::Text(_)
+                ),
+                "{mime} should be read as plain text"
+            );
+        }
     }
 }

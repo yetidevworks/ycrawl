@@ -119,14 +119,18 @@ impl Browser {
         settle: Duration,
     ) -> Result<(String, String)> {
         // A timeout is not automatically fatal: the page may have rendered enough to
-        // be useful before the last asset stalled, so take whatever is there.
-        let nav = tokio::time::timeout(remaining(deadline)?, client.goto(url));
-        if let Ok(r) = nav.await {
-            r.context("navigating")?;
+        // be useful before the last asset stalled, so take whatever is there. Every
+        // step below is allowed to run out of budget; only the one read that
+        // produces the HTML has to succeed, and it gets a grace period so that an
+        // exhausted deadline still returns a page rather than an error.
+        if let Ok(within) = remaining(deadline) {
+            if let Ok(r) = tokio::time::timeout(within, client.goto(url)).await {
+                r.context("navigating")?;
+            }
         }
 
         // Give client-side rendering a moment to populate the DOM.
-        sleep_within(deadline, settle).await?;
+        let _ = sleep_within(deadline, settle).await;
         if let Ok(within) = remaining(deadline) {
             let _ = tokio::time::timeout(within, client.find(Locator::Css("body"))).await;
         }
@@ -134,13 +138,21 @@ impl Browser {
         // A Cloudflare challenge needs several seconds of JavaScript before the real
         // page replaces it. Reading the DOM once, immediately, returns the
         // interstitial, so poll until the wall clears or the budget runs out.
-        let mut html = tokio::time::timeout(remaining(deadline)?, client.source())
+        let read_budget = remaining(deadline)
+            .unwrap_or(SOURCE_READ_GRACE)
+            .max(SOURCE_READ_GRACE);
+        let mut html = tokio::time::timeout(read_budget, client.source())
             .await
             .context("browser deadline expired while reading the page")?
             .context("reading page source")?;
         if crate::verdict::is_interstitial(&html) {
             while Instant::now() < deadline {
-                sleep_within(deadline, Duration::from_millis(750)).await?;
+                if sleep_within(deadline, Duration::from_millis(750))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
                 let Ok(within) = remaining(deadline) else {
                     break;
                 };
@@ -150,7 +162,7 @@ impl Browser {
                         html = next;
                         if cleared {
                             // Let the page that replaced it finish rendering.
-                            sleep_within(deadline, settle).await?;
+                            let _ = sleep_within(deadline, settle).await;
                             if let Ok(within) = remaining(deadline) {
                                 if let Ok(Ok(next)) =
                                     tokio::time::timeout(within, client.source()).await
@@ -178,6 +190,10 @@ impl Browser {
         Ok((html, final_url))
     }
 }
+
+/// The last read is what turns a browser session into a result, so it is given a
+/// short grace period past the deadline rather than being cancelled outright.
+const SOURCE_READ_GRACE: Duration = Duration::from_secs(2);
 
 fn remaining(deadline: Instant) -> Result<Duration> {
     deadline

@@ -332,6 +332,15 @@ fn total_attempt_ms(attempts: &[Attempt]) -> u64 {
 }
 
 fn result_better(candidate: &Page, previous: &Page) -> bool {
+    // A tier that cannot read the status line cannot report an HTTP error, so its
+    // verdict always outranks one on paper. Firefox rendering the body of a 403
+    // would otherwise replace "HTTP 403" with "content" and drop the status with
+    // it. Make it win on what it actually recovered instead.
+    if candidate.meta.status.is_none() && matches!(previous.meta.verdict, Verdict::HttpError { .. })
+    {
+        return candidate.meta.words > previous.meta.words;
+    }
+
     let candidate_rank = verdict_rank(&candidate.meta.verdict);
     let previous_rank = verdict_rank(&previous.meta.verdict);
     candidate_rank > previous_rank
@@ -488,6 +497,23 @@ mod tests {
         );
         let content = test_page(Verdict::Content, 20);
         assert!(result_better(&content, &blocked));
+    }
+
+    /// A browser that only re-renders the error page must not turn a known 403
+    /// into "content"; one that actually gets through still should.
+    #[test]
+    fn a_status_blind_tier_does_not_erase_a_known_http_error() {
+        let forbidden = test_page(Verdict::HttpError { status: 403 }, 0);
+
+        let mut error_page = test_page(Verdict::Thin { words: 0 }, 0);
+        error_page.meta.status = None;
+        error_page.meta.tier = Tier::Browser;
+        assert!(!result_better(&error_page, &forbidden));
+
+        let mut recovered = test_page(Verdict::Content, 900);
+        recovered.meta.status = None;
+        recovered.meta.tier = Tier::Browser;
+        assert!(result_better(&recovered, &forbidden));
     }
 
     #[test]

@@ -74,6 +74,7 @@ When a page is blocked, report it plainly:
 | `--no-images` | drop image markup |
 | `--timeout N` | per-request seconds, default 20 |
 | `--fail-on-error` | fail a batch when any URL could not be read |
+| `--max-bytes N` | refuse a response over N bytes, default 20 MB |
 
 ## What you get
 
