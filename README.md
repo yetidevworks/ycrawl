@@ -125,6 +125,13 @@ benchmark is kept separate and repeatable rather than treated as a permanent cla
 The included Claude Code and Codex skills teach agents to check summaries first,
 batch URLs, and stop retrying pages that ycrawl identifies as blocked.
 
+### Claude Code
+
+```text
+/plugin marketplace add /path/to/ycrawl
+/plugin install ycrawl@ycrawl-local
+```
+
 ### Codex
 
 Codex finds the skill in `.agents/skills/ycrawl/` automatically when you open this
@@ -140,13 +147,6 @@ ln -s /path/to/ycrawl/.agents/skills/ycrawl ~/.agents/skills/ycrawl
 
 See the [Codex skill documentation](https://learn.chatgpt.com/docs/build-skills) for
 other installation options.
-
-### Claude Code
-
-```text
-/plugin marketplace add /path/to/ycrawl
-/plugin install ycrawl@ycrawl-local
-```
 
 ## Limitations
 
