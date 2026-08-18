@@ -1,0 +1,18 @@
+[package]
+name = "ycrawl-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ycrawl"
+path = "src/main.rs"
+
+[dependencies]
+ycrawl-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+url.workspace = true

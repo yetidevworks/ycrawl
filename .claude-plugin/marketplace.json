@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ycrawl-local",
+  "owner": {
+    "name": "YetiDevWorks"
+  },
+  "plugins": [
+    {
+      "name": "ycrawl",
+      "source": "./claude-plugin",
+      "description": "Fetch web pages as clean markdown, with honest verdicts when a page is walled",
+      "version": "0.1.0",
+      "author": {
+        "name": "YetiDevWorks"
+      },
+      "skills": ["./skills/ycrawl"]
+    }
+  ]
+}

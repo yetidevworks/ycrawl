@@ -1,0 +1,8 @@
+{
+  "name": "ycrawl",
+  "description": "Fetch web pages as clean markdown, with honest verdicts when a page is walled",
+  "version": "0.1.0",
+  "author": {
+    "name": "YetiDevWorks"
+  }
+}

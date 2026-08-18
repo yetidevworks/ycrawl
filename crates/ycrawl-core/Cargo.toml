@@ -1,0 +1,22 @@
+[package]
+name = "ycrawl-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+url.workspace = true
+regex.workspace = true
+
+wreq = "6.0.0-rc.29"
+wreq-util = "3.0.0-rc.6"
+dom_smoothie = "0.18"
+htmd = "0.5"
+scraper = "0.25"
+dom_query = "0.28"
+fantoccini = "0.22"
