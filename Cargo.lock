@@ -2778,7 +2778,7 @@ dependencies = [
 
 [[package]]
 name = "ycrawl-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "ycrawl-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "dom_query",

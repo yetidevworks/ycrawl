@@ -6,14 +6,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/yetidevworks/ycrawl"
 authors = ["YetiDevWorks"]
 
 [workspace.dependencies]
-ycrawl-core = { path = "crates/ycrawl-core", version = "0.2.0" }
+ycrawl-core = { path = "crates/ycrawl-core", version = "0.2.1" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 serde = { version = "1", features = ["derive"] }
