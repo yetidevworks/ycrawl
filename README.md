@@ -15,13 +15,10 @@ you when a page could not be read.
 ## Install
 
 ```bash
-brew tap yetidevworks/ycrawl
-brew trust yetidevworks/ycrawl
-brew install ycrawl
+brew install yetidevworks/ycrawl/ycrawl
 ```
 
-Homebrew requires the `trust` step for third-party taps. Prebuilt macOS and Linux
-binaries for arm64 and x86_64 are also available on the
+Prebuilt macOS and Linux binaries for arm64 and x86_64 are also available on the
 [releases page](https://github.com/yetidevworks/ycrawl/releases).
 
 To build from source:
