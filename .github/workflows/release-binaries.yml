@@ -28,7 +28,7 @@ jobs:
           # btls-sys, which compiles it from vendored source with cmake and
           # bindgen — cross-compiling that is a fight, and native runners exist
           # for all four platforms we care about.
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             target_name: darwin-arm64
           - os: macos-15-intel
